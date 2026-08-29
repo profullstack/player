@@ -11,9 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No `version:` here on purpose. action-setup refuses outright when a
+      # version is given AND package.json has `packageManager`, which it does;
+      # that field is the single source of truth for the pnpm version.
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
 
       - uses: actions/setup-node@v4
         with:
