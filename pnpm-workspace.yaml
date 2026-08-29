@@ -1,0 +1,6 @@
+# tsup bundles with esbuild, whose postinstall fetches the platform binary.
+# Approved here because pnpm 11 treats an unapproved build script as a fatal
+# install error, which would fail CI. Written by `pnpm approve-builds`; the old
+# `pnpm` field in package.json is no longer read.
+allowBuilds:
+  esbuild: true

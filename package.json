@@ -1,0 +1,82 @@
+{
+  "name": "@profullstack/player",
+  "version": "0.1.0",
+  "description": "One web player for every source a Profullstack site serves: MP4, HLS, MPEG-2 transport streams and audio, with one control bar, on desktop, mobile, PWA and television.",
+  "keywords": [
+    "video",
+    "player",
+    "hls",
+    "mpegts",
+    "audio",
+    "pwa"
+  ],
+  "license": "MIT",
+  "author": "Profullstack, Inc.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/player.git"
+  },
+  "homepage": "https://github.com/profullstack/player#readme",
+  "bugs": {
+    "url": "https://github.com/profullstack/player/issues"
+  },
+  "type": "module",
+  "sideEffects": [
+    "*.css"
+  ],
+  "files": [
+    "dist"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "default": "./dist/react/index.js"
+    },
+    "./player.css": "./dist/player.css",
+    "./package.json": "./package.json"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "prettier --check .",
+    "format": "prettier --write .",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "hls.js": "^1.7.1",
+    "mpegts.js": "^1.8.2"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@vitest/coverage-v8": "^3.2.6",
+    "jsdom": "^26.0.0",
+    "prettier": "^3.4.2",
+    "react": "^19.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.6"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "packageManager": "pnpm@11.18.0"
+}
