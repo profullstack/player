@@ -14,7 +14,7 @@ import { defineConfig } from 'tsup';
  * anyone who already has one.
  */
 export default defineConfig({
-  entry: ['src/index.ts', 'src/react/index.tsx'],
+  entry: ['src/index.ts', 'src/react/index.tsx', 'src/codecs.ts'],
   format: ['esm'],
   target: 'es2022',
   splitting: true,
