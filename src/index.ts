@@ -20,6 +20,7 @@
  */
 
 export { createPlayer, type PlayerHandle, type PlayerOptions } from './core/player';
+export { attachSource, type AttachOptions, type AttachedSource } from './core/attach';
 export { formatTime, formatTimeParam, parseTimeParam } from './core/time';
 export {
   activeChapter,

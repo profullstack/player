@@ -192,7 +192,11 @@ describe('createPlayer', () => {
     // An HLS URL looks identical live or not; only the playlist knows, and it
     // arrives after the bar has already been drawn.
     it('switches to live mode when the engine reports a live playlist', async () => {
-      const { root } = mount({ src: 'https://example.test/s.m3u8', kind: 'hls' });
+      const { root } = mount({
+        src: 'https://example.test/s.m3u8',
+        kind: 'hls',
+        capabilities: { mediaSource: true, nativeHls: false },
+      });
       expect(root.classList.contains('pux-player--live')).toBe(false);
 
       await vi.waitFor(() => expect(lastContext).not.toBeNull());
@@ -216,7 +220,11 @@ describe('createPlayer', () => {
 
   describe('quality', () => {
     it('stays hidden when there is no choice to make', async () => {
-      const { root } = mount({ src: 'a.m3u8', kind: 'hls' });
+      const { root } = mount({
+        src: 'a.m3u8',
+        kind: 'hls',
+        capabilities: { mediaSource: true, nativeHls: false },
+      });
       await vi.waitFor(() => expect(lastContext).not.toBeNull());
       lastContext?.onReady?.({
         live: false,
