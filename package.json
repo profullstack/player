@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/player",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "One web player for every source a Profullstack site serves: MP4, HLS, MPEG-2 transport streams and audio, with one control bar, on desktop, mobile, PWA and television.",
   "keywords": [
     "video",
