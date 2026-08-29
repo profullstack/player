@@ -84,6 +84,13 @@ describe('unplayableReason', () => {
     );
   });
 
+  it('lets the host name the thing its reader clicked', () => {
+    // genrewatch and tipoffwatch say "channel"; a recording is a "stream".
+    expect(unplayableReason({ videoCodec: 'hvc1.1' }, supports([]), '', 'channel')).toBe(
+      'This channel is H.265, which this browser cannot decode.'
+    );
+  });
+
   it('appends the host site’s advice when given some', () => {
     const reason = unplayableReason({ videoCodec: 'hvc1.1' }, supports([]), 'Try VLC.');
     expect(reason).toBe('This stream is H.265, which this browser cannot decode. Try VLC.');

@@ -119,11 +119,16 @@ export function mseCandidates(kind: 'video' | 'audio', codec: string | undefined
  *   is testable without a browser.
  * @param advice appended when there is a problem — the host site's suggestion
  *   for what to do instead, which this package cannot know.
+ * @param subject what the thing is called on the host site. genrewatch and
+ *   tipoffwatch say "channel" because that is what their reader clicked; a
+ *   recording is a "stream" at best. Naming it wrongly is a small thing that
+ *   makes shared copy read as though it came from somewhere else.
  */
 export function unplayableReason(
   info: MediaInfoLike | null | undefined,
   isTypeSupported: (type: string) => boolean,
-  advice = ''
+  advice = '',
+  subject = 'stream'
 ): string | null {
   if (!info || typeof isTypeSupported !== 'function') return null;
 
@@ -158,5 +163,5 @@ export function unplayableReason(
   // Both halves unplayable is one sentence, not two: the reader is going
   // elsewhere either way, and listing two problems reads as two things to fix.
   const what = bad.length === 1 ? bad[0] : `${String(bad[0])} and ${String(bad[1])}`;
-  return `This stream is ${String(what)}, which this browser cannot decode.${advice ? ` ${advice}` : ''}`;
+  return `This ${subject} is ${String(what)}, which this browser cannot decode.${advice ? ` ${advice}` : ''}`;
 }
