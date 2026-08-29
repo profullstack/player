@@ -44,7 +44,8 @@ import {
   type EngineName,
   type SourceKind,
 } from './source';
-import type { EngineFactory, EngineHandle, QualityLevel } from '../engines/types';
+import type { EngineFactory, QualityLevel } from '../engines/types';
+import { attachSource, type AttachedSource } from './attach';
 
 export interface PlayerOptions {
   src: string;
@@ -359,7 +360,7 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
   let lastSaved = 0;
   let scrubbing = false;
   let destroyed = false;
-  let engine: EngineHandle | null = null;
+  let engine: AttachedSource | null = null;
   let levels: QualityLevel[] = [];
 
   function on(
@@ -863,51 +864,46 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
   // on demand. Nothing above depends on it having happened.
   const attaching = attachEngine();
   async function attachEngine(): Promise<void> {
-    if (choice.unplayable && choice.engine !== 'native') return;
-    const context = {
-      media,
-      src,
-      isTv,
-      live,
-      onError: (message: string) => {
-        root.classList.add('pux-player--failed');
-        showNotice(message);
-      },
-      onNotice: (message: string | null) => {
-        if (message === null) hideNotice();
-        else showNotice(message);
-      },
-      onReady: (info: { live: boolean; levels: QualityLevel[] }) => {
-        if (destroyed) return;
-        if (info.live !== live) {
-          live = info.live;
-          applyMode();
-          rebuildChapters();
-        }
-        levels = info.levels;
-        renderQuality();
-      },
-    };
-
+    // Nothing to attach when the source cannot play here: `init` has already
+    // shown the reason, and pointing a native element at, say, an .m3u8 it
+    // cannot parse would replace that reason with a generic media error.
+    if (choice.unplayable) return;
     try {
-      const override = options.engines?.[choice.engine];
-      if (override) {
-        engine = await override(context);
-      } else if (choice.engine === 'hls') {
-        const { createHlsEngine } = await import('../engines/hls');
-        engine = await createHlsEngine(context);
-      } else if (choice.engine === 'mpegts') {
-        const { createMpegtsEngine } = await import('../engines/mpegts');
-        engine = await createMpegtsEngine(context, {
-          withCredentials: options.withCredentials ?? false,
-          unplayableAdvice: options.unplayableAdvice ?? '',
-        });
-      } else {
-        const { createNativeEngine } = await import('../engines/native');
-        engine = await createNativeEngine(context);
-      }
+      // Delegated rather than repeated. `attachSource` owns the engine ladder,
+      // and a second copy of it here would be the one that stops matching.
+      const attached = await attachSource(media, {
+        src,
+        ...(options.kind ? { kind: options.kind } : {}),
+        ...(options.mimeType ? { mimeType: options.mimeType } : {}),
+        live,
+        isTv,
+        capabilities: caps,
+        withCredentials: options.withCredentials ?? false,
+        unplayableAdvice: options.unplayableAdvice ?? '',
+        ...(options.engines ? { engines: options.engines } : {}),
+        onError: (message: string) => {
+          root.classList.add('pux-player--failed');
+          showNotice(message);
+        },
+        onNotice: (message: string | null) => {
+          if (message === null) hideNotice();
+          else showNotice(message);
+        },
+        onReady: (info) => {
+          if (destroyed) return;
+          if (info.live !== live) {
+            live = info.live;
+            applyMode();
+            rebuildChapters();
+          }
+          levels = info.levels;
+          renderQuality();
+        },
+      });
+
+      engine = attached;
       if (destroyed) {
-        engine.destroy();
+        attached.destroy();
         engine = null;
         return;
       }

@@ -71,6 +71,21 @@ So hls.js runs wherever Media Source exists (Chrome, Firefox, Edge, Android, des
 - **Remembers** volume, mute and speed across sources, and a position per `mediaId` (60 of them, least-recently-touched evicted). Every storage access is guarded — some browsers throw on merely touching `localStorage`.
 - **Explains failures.** A blocked media load is a console-only event; the element's error code is the only in-page evidence. A CSP-refused load, a dropped connection and an undecodable codec each get their own sentence.
 
+## Already have a player?
+
+Three of our apps do — p0dcasters and rssamplifier each run a queue-aware dock, and media-streamer has a modal per source. Replacing those with this bar would delete working features to gain a nicer-looking one. What they still need is the delivery half: which engine plays this source.
+
+```js
+import { attachSource } from '@profullstack/player';
+
+const attached = await attachSource(audioEl, { src: episode.enclosureUrl });
+// attached.engine -> 'native' | 'hls' | 'mpegts'
+// attached.unplayable -> a sentence, when nothing here can play it
+attached.destroy();
+```
+
+No DOM is created, nothing is styled, and your UI is untouched. `createPlayer` uses exactly this internally, so there is one engine ladder rather than two that drift.
+
 ## Options
 
 | Option                    | Meaning                                                                    |
