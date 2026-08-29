@@ -35,8 +35,12 @@ describe('mseCandidates', () => {
     expect(mseCandidates('audio', 'ac-3')).toEqual(['audio/mp4; codecs="ac-3"']);
   });
 
-  it('has nothing to ask when there is no codec', () => {
+  it('has nothing to ask when there is no codec, or no kind', () => {
     expect(mseCandidates('audio', undefined)).toEqual([]);
+    // Regression: `kind` is typed, which protects TypeScript callers and not
+    // the two JavaScript bundles that import this. Without the runtime guard,
+    // a missing kind asked MSE about `null/mp4`.
+    expect(mseCandidates(null as unknown as 'audio', 'mp3')).toEqual([]);
   });
 });
 

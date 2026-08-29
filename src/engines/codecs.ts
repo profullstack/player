@@ -85,7 +85,12 @@ export function codecName(codec: string | null | undefined): string | null {
  * handed is the one that has to pass, and only that one is ever true here anyway.
  */
 export function mseCandidates(kind: 'video' | 'audio', codec: string | undefined): string[] {
-  if (!codec) return [];
+  // `kind` is typed, and that protects TypeScript callers only. This module is
+  // imported by two plain-JavaScript client bundles where a missing kind is an
+  // ordinary runtime value, and the original guarded both -- dropping it in the
+  // port turned `mseCandidates(null, 'mp3')` from "nothing to ask" into a
+  // question about `null/mp4`. Caught by genrewatch's own suite on adoption.
+  if (!codec || !kind) return [];
 
   if (kind === 'audio') {
     /*
