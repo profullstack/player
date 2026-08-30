@@ -43,10 +43,30 @@ describe('the mpegts buffering profile', () => {
     expect(desktop.stashInitialSize).toBe(384 * 1024);
   });
 
-  it('demuxes off the main thread', () => {
-    // Broadcast-bitrate demuxing competes with rendering the page it plays on,
-    // and loses as dropped frames rather than as an error.
-    expect(desktop.enableWorker).toBe(true);
+  it('does NOT demux off the main thread unless the host opts in', () => {
+    /*
+     * A regression test with a real outage behind it.
+     *
+     * A worker reads like free performance, and it is -- under webpack only.
+     * mpegts.js assembles its worker by stringifying `__webpack_modules__`,
+     * webpack's internal module registry. A Next.js host has that global; a
+     * host bundling with Bun, esbuild, Vite or Rollup does not, and the worker
+     * it builds is broken.
+     *
+     * It fails silently, which is what makes it dangerous. `Transmuxer`'s
+     * try/catch only sees a SYNCHRONOUS throw, and a Worker that constructs
+     * from a bad blob fails asynchronously: nothing throws, nothing falls back
+     * to inline transmuxing, no init segment arrives, and the player reports no
+     * error. Every stream simply does not play. Turning this on by default did
+     * exactly that to tipoffwatch, whose bundle Bun builds.
+     */
+    expect(desktop.enableWorker).toBe(false);
+  });
+
+  it('lets a webpack host ask for the worker anyway', () => {
+    // The capability is real where the bundler supports it, so it stays
+    // reachable -- just never by default.
+    expect(configFor(false, { enableWorker: true }).enableWorker).toBe(true);
   });
 
   it('never pauses the download to idle', () => {

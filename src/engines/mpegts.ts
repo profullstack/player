@@ -46,6 +46,15 @@ export interface MpegtsOptions {
   withCredentials?: boolean;
   /** Appended to a codec failure, e.g. "VLC can — the button is beside Play." */
   unplayableAdvice?: string;
+  /**
+   * Demux on a worker thread. Only set this on a **webpack** host.
+   *
+   * mpegts.js assembles its worker out of `__webpack_modules__`, so anywhere
+   * else the worker is broken — and broken asynchronously, which means no
+   * error, no fallback, and no playback at all. Defaults to false. See the
+   * note in `configFor`.
+   */
+  enableWorker?: boolean;
 }
 
 /**
@@ -73,19 +82,32 @@ export interface MpegtsOptions {
  * ever complained.
  */
 /** Exported for the test that pins these values; not part of the public API. */
-export function configFor(_isTv: boolean): Record<string, unknown> {
+export function configFor(_isTv: boolean, options: MpegtsOptions = {}): Record<string, unknown> {
   return {
     /*
-     * Demux on a worker thread.
+     * Off unless the host says otherwise, and the reason is not performance.
      *
-     * A transport stream at broadcast bitrate is real work, and doing it on the
-     * main thread means it competes with rendering the page it is playing on --
-     * which shows up as dropped frames rather than as an error. mpegts.js builds
-     * the worker from a blob URL, so a host serving a strict CSP needs
-     * `worker-src blob:` for this to take; without it the library falls back and
-     * the only thing lost is the contention it was avoiding.
+     * Demuxing a broadcast-bitrate transport stream on the main thread competes
+     * with rendering the page it is playing on, so a worker looks like free
+     * performance. It is free only under webpack.
+     *
+     * mpegts.js builds its worker by STRINGIFYING `__webpack_modules__` --
+     * webpack's internal module registry -- in `utils/webworkify-webpack.js`.
+     * A Next.js host has that global and the worker works. A host bundling with
+     * Bun, esbuild, Vite or Rollup does not, and the worker it assembles is
+     * broken.
+     *
+     * It then fails in the worst available way. `Transmuxer` wraps the setup in
+     * a try/catch and falls back to inline transmuxing, but only a SYNCHRONOUS
+     * throw reaches that catch. A Worker that constructs from a blob whose body
+     * then fails is asynchronous: nothing throws, nothing falls back, no init
+     * segment ever arrives, and the player sits there having reported no error.
+     * Every stream simply does not play. That is what turning this on by
+     * default did to tipoffwatch, whose bundle Bun builds.
+     *
+     * So it is opt-in, and only a host that knows it is webpack should opt in.
      */
-    enableWorker: true,
+    enableWorker: options.enableWorker ?? false,
 
     /*
      * Read ahead, on every screen.
@@ -159,7 +181,7 @@ export async function createMpegtsEngine(
     return { destroy: () => undefined, levels: () => [] };
   }
 
-  const config = configFor(isTv);
+  const config = configFor(isTv, options);
   let player: MpegtsPlayer | null = null;
   let stopped = false;
   let restarts = 0;
