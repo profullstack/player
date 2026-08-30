@@ -26,20 +26,20 @@
 import type { EngineContext, EngineHandle } from './types';
 import { unplayableReason } from './codecs';
 
-/** How many times a stream is rebuilt before the reader is told it failed. */
-const MAX_RESTARTS = 3;
-const RESTART_BASE_MS = 1500;
+/**
+ * How many times a stream is rebuilt before the reader is told it failed.
+ *
+ * Five, doubling from two seconds, which is media-streamer's live TV player --
+ * the one that survives an evening on the same provider lines this engine was
+ * dying on. Three from 1.5s came over with the port. The number matters less
+ * than when the budget refills, though; see the `playing` handler below.
+ */
+export const MAX_RESTARTS = 5;
+const RESTART_BASE_MS = 2000;
 
 /** How a stall is noticed: the clock is read this often, this many times. */
 const STALL_CHECK_MS = 5000;
 const STALL_LIMIT = 3;
-
-/**
- * Playback this long since the last restart means the trouble is over, and the
- * budget goes back to full. Without it a channel that breaks once an hour spends
- * its three restarts over an afternoon and then fails for good.
- */
-const RECOVERED_AFTER_MS = 30_000;
 
 export interface MpegtsOptions {
   /** Sent with the request; IPTV proxies authenticate by session cookie. */
@@ -49,41 +49,87 @@ export interface MpegtsOptions {
 }
 
 /**
- * mpegts.js settings for one screen or the other.
+ * mpegts.js settings.
  *
- * A television is a slow decoder on a household connection: read ahead and do
- * not chase the live edge, because latency chasing answers a stall by seeking
- * forward, which is a stall the reader can see. A desktop wants the opposite.
+ * One profile, not one per screen, and that is the change rather than an
+ * oversight. These are media-streamer's live TV numbers, adopted wholesale
+ * because that player survives an evening on the same provider lines where the
+ * split profile was dying after a minute or two.
+ *
+ * What the split got wrong was the desktop half. It ran with no stash at all
+ * (`stashInitialSize: 128` -- bytes) and `liveBufferLatencyChasing: true`, on
+ * the reasoning that a laptop has bandwidth to spare and should therefore sit
+ * as close to the live edge as it can. But chasing does not wait politely:
+ * mpegts.js implements it by assigning to `currentTime`, which is a hard seek,
+ * and MSE tears down and rebuilds the decode pipeline on every one. It is
+ * evaluated on every appended fragment and it leaves only `MinRemain` seconds
+ * of buffer behind -- one second, as it was set. One second is a single jitter
+ * spike from an underrun; the underrun refills past the ceiling; it seeks
+ * again. Every cycle of that sawtooth is a visible hitch, and enough of them in
+ * a row exhaust the restart budget and end the stream for good.
+ *
+ * So: read ahead on every device, never chase, and demux off the main thread.
+ * A television was already getting all three, which is why only the desktop
+ * ever complained.
  */
-function configFor(isTv: boolean): Record<string, unknown> {
-  const shared = {
-    // lazyLoad pauses the download once enough is buffered, which for a live
-    // stream means dropping the connection mid-broadcast and reconnecting.
-    lazyLoad: false,
-    // Without this the source buffer keeps every second of a three-hour stream
-    // in memory and the tab is killed — on a Fire TV, considerably sooner.
+/** Exported for the test that pins these values; not part of the public API. */
+export function configFor(_isTv: boolean): Record<string, unknown> {
+  return {
+    /*
+     * Demux on a worker thread.
+     *
+     * A transport stream at broadcast bitrate is real work, and doing it on the
+     * main thread means it competes with rendering the page it is playing on --
+     * which shows up as dropped frames rather than as an error. mpegts.js builds
+     * the worker from a blob URL, so a host serving a strict CSP needs
+     * `worker-src blob:` for this to take; without it the library falls back and
+     * the only thing lost is the contention it was avoiding.
+     */
+    enableWorker: true,
+
+    /*
+     * Read ahead, on every screen.
+     *
+     * The stash sits in front of the demuxer. A transport stream arrives in
+     * bursts -- the provider's pacing, not the viewer's bandwidth -- so with
+     * nothing buffered each gap between bursts is an underrun however fast the
+     * connection is. 384KB is mpegts.js's own default, roughly a second.
+     */
+    enableStashBuffer: true,
+    stashInitialSize: 384 * 1024,
+
+    /*
+     * Never close drift by seeking. See the note above: this is the line that
+     * made the picture stutter and then killed the stream outright. The two
+     * bounds are inert while chasing is off, and are kept as the bound anyone
+     * re-enabling it would want rather than left to a library default.
+     */
+    liveBufferLatencyChasing: false,
+    liveBufferLatencyMaxLatency: 5,
+    liveBufferLatencyMinRemain: 1,
+
+    /*
+     * Drop what has already been watched. Without this the source buffer keeps
+     * every second of a three-hour broadcast in memory and the tab is killed --
+     * on a Fire TV, considerably sooner than that.
+     */
     autoCleanupSourceBuffer: true,
     autoCleanupMaxBackwardDuration: 30,
     autoCleanupMinBackwardDuration: 10,
-  };
 
-  return isTv
-    ? {
-        ...shared,
-        enableStashBuffer: true,
-        stashInitialSize: 384 * 1024,
-        liveBufferLatencyChasing: false,
-        liveBufferLatencyMaxLatency: 12,
-        liveBufferLatencyMinRemain: 2,
-      }
-    : {
-        ...shared,
-        enableStashBuffer: false,
-        stashInitialSize: 128,
-        liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 6,
-        liveBufferLatencyMinRemain: 1,
-      };
+    /*
+     * lazyLoad pauses the download once enough is buffered, which on a live
+     * stream means dropping the provider connection mid-broadcast and then
+     * reconnecting -- on a line that counts concurrent connections, the worst
+     * available way to idle. Off, with both durations stated anyway so there is
+     * no library default to inherit if it is ever turned on.
+     */
+    lazyLoad: false,
+    lazyLoadMaxDuration: 60,
+    lazyLoadRecoverDuration: 30,
+
+    seekType: 'range',
+  };
 }
 
 interface MpegtsPlayer {
@@ -119,7 +165,6 @@ export async function createMpegtsEngine(
   let restarts = 0;
   let restartTimer: ReturnType<typeof setTimeout> | null = null;
   let stallTimer: ReturnType<typeof setInterval> | null = null;
-  let startedAt = 0;
   let lastTime = -1;
   let stalls = 0;
 
@@ -188,19 +233,15 @@ export async function createMpegtsEngine(
         }
         return;
       }
-      // It is moving. If it has been moving for a while, the earlier trouble is
-      // over and this counts as a healthy stream again.
+      // It is moving, so nothing is wrong right now. The restart budget is not
+      // touched here -- that is the `playing` handler's job, and the difference
+      // is explained there.
       lastTime = media.currentTime;
       stalls = 0;
-      if (restarts > 0 && Date.now() - startedAt > RECOVERED_AFTER_MS) {
-        restarts = 0;
-        context.onNotice(null);
-      }
     }, STALL_CHECK_MS);
   };
 
   function start(): void {
-    startedAt = Date.now();
     player = mpegts.createPlayer(
       {
         type: 'mpegts',
@@ -238,12 +279,41 @@ export async function createMpegtsEngine(
     context.onReady?.({ live: context.live, levels: [] });
   }
 
+  /*
+   * A picture is the only proof worth acting on, and it refills the budget.
+   *
+   * This is the difference between a stream that recovers all evening and one
+   * that dies after a minute or two, and it is worth being exact about why.
+   *
+   * The budget used to come back only after RECOVERED_AFTER_MS -- thirty
+   * seconds of unbroken playback, measured from the last restart and checked
+   * only from inside the stall watcher. A channel that hiccups three times
+   * inside half a minute therefore spent its whole allowance and was given up
+   * on permanently, even though every one of those restarts had worked and the
+   * stream was playing again seconds later. On a provider line that drops a
+   * connection now and then -- which is all of them -- that is a hard ceiling
+   * of three hiccups per stream, and reaching it takes about a minute.
+   *
+   * media-streamer's live TV player resets on every `playing` instead, and it
+   * is right: `playing` fires when the media element genuinely resumed, so the
+   * budget is spent by failures to *recover*, not by failures. A channel that
+   * never plays still gives up after MAX_RESTARTS, because nothing ever fires
+   * this. A channel that comes back gets its allowance back, which is the only
+   * reading under which "three attempts" means what it sounds like.
+   */
+  const onPlaying = (): void => {
+    restarts = 0;
+    context.onNotice(null);
+  };
+  media.addEventListener('playing', onPlaying);
+
   start();
 
   return {
     destroy(): void {
       stopped = true;
       clearTimers();
+      media.removeEventListener('playing', onPlaying);
       destroyPlayer();
     },
     levels: () => [],
