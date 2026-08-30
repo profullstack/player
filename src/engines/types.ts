@@ -24,7 +24,11 @@ export interface QualityLevel {
 export interface EngineContext {
   media: HTMLMediaElement;
   src: string;
-  /** True on a television, which wants a very different buffering profile. */
+  /**
+   * True on a television. The HLS engine still tunes on it; the transport
+   * stream engine no longer does -- it buffers the same way everywhere, since
+   * the desktop profile it used to keep separate was the one that stuttered.
+   */
   isTv: boolean;
   /**
    * Caller's claim about whether this is a live stream. Engines that can tell
