@@ -14,7 +14,10 @@ import { defineConfig } from 'tsup';
  * anyone who already has one.
  */
 export default defineConfig({
-  entry: ['src/index.ts', 'src/react/index.tsx', 'src/codecs.ts'],
+  // m3u.ts is its own entry for the same reason codecs.ts is, only more so: it is
+  // imported by a Bun server, and it must be reachable without the root export
+  // pulling a player and its dynamic engine imports into a process that has no DOM.
+  entry: ['src/index.ts', 'src/react/index.tsx', 'src/codecs.ts', 'src/m3u.ts'],
   format: ['esm'],
   target: 'es2022',
   splitting: true,
