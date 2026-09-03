@@ -216,6 +216,36 @@ describe('createPlayer', () => {
       expect(control(root, 'play')?.hasAttribute('hidden')).toBe(false);
       expect(control(root, 'rate')?.hasAttribute('hidden')).toBe(false);
     });
+
+    it('takes the compact bar for an HLS source when the host says it is audio', () => {
+      // A radio station: the URL is a playlist, the engine is hls.js, and there
+      // is no picture. Inference alone would build a video stage for it.
+      const { root, media } = mount({
+        src: 'https://example.test/radio.m3u8',
+        audio: true,
+        capabilities: { mediaSource: true, nativeHls: false },
+      });
+      expect(media.tagName).toBe('AUDIO');
+      expect(root.classList.contains('pux-player--audio')).toBe(true);
+      expect(control(root, 'fullscreen')?.hasAttribute('hidden')).toBe(true);
+      expect(control(root, 'pip')?.hasAttribute('hidden')).toBe(true);
+    });
+
+    it('infers audio from an <audio> element it was handed', () => {
+      const root = document.createElement('div');
+      const existing = document.createElement('audio');
+      root.append(existing);
+      document.body.append(root);
+      const handle = createPlayer(root, {
+        src: 'https://example.test/radio.m3u8',
+        media: existing,
+        capabilities: { mediaSource: true, nativeHls: false },
+        engines: { native: fakeEngine(), hls: fakeEngine(), mpegts: fakeEngine() },
+      });
+      expect(handle.media).toBe(existing);
+      expect(root.classList.contains('pux-player--audio')).toBe(true);
+      handle.destroy();
+    });
   });
 
   describe('quality', () => {

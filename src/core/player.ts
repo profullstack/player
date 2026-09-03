@@ -54,6 +54,17 @@ export interface PlayerOptions {
   /** A server-declared Content-Type, if one was seen. */
   mimeType?: string;
   /**
+   * Draw the compact audio bar whatever the source looks like.
+   *
+   * The audio shape is normally inferred from the source, and an `.mp3` gets
+   * it without asking. A radio station is HLS: the URL ends in `.m3u8`, the
+   * playlist carries nothing but AAC, and the inference draws a black 16:9
+   * stage with a LIVE badge over a picture that will never arrive. The host
+   * knows it is audio; this is how it says so. Inferred as well when the
+   * element handed in through `media` is an `<audio>`.
+   */
+  audio?: boolean;
+  /**
    * Stable key for this recording; what a resume position is filed under. Omit
    * and nothing is remembered — which is right for a live stream and for
    * anything a reader would rather not have recorded in their browser.
@@ -211,7 +222,11 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
     },
     caps
   );
-  const audioOnly = isAudioKind(choice.kind);
+  const audioOnly =
+    options.audio ??
+    (typeof HTMLAudioElement !== 'undefined' && options.media instanceof HTMLAudioElement
+      ? true
+      : isAudioKind(choice.kind));
   // A transport stream has no end and no seekable range; HLS tells us later,
   // from the playlist, and flips this if it turns out to be a live edge.
   let live = options.live ?? choice.kind === 'mpegts';

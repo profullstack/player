@@ -62,7 +62,7 @@ So hls.js runs wherever Media Source exists (Chrome, Firefox, Edge, Android, des
 
 - **VOD** — scrub with buffered range, ±10s, speed, resume, chapters, `?t=` timestamps, quality.
 - **Live** — none of those, because each is a lie about a stream with no end: nothing to scrub towards, no position worth remembering, no speed but 1. A LIVE badge instead. HLS flips into this from the playlist, after the bar has already been drawn.
-- **Audio** — a compact bar in normal flow: no stage, no fullscreen, no picture-in-picture. Still a full transport.
+- **Audio** — a compact bar in normal flow: no stage, no fullscreen, no picture-in-picture. Still a full transport. Inferred from an `.mp3`-shaped URL or from an `<audio>` element passed as `media`; pass `audio: true` when the host knows better — a radio station is an `.m3u8` with no picture in it, and would otherwise get a black stage and a LIVE badge.
 
 ## Everything else it does
 
