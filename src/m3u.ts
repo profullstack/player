@@ -45,7 +45,15 @@ export interface M3uEntry {
 }
 
 export interface ParseOptions {
-  /** Stop after this many entries. */
+  /**
+   * Stop after this many entries.
+   *
+   * `Infinity` -- or `0`, which is what an unset environment variable parses to
+   * -- means no ceiling. A ceiling is a memory bound and nothing else, so it
+   * belongs to whoever owns the memory: a browser holding the result in an array
+   * wants one, a server streaming entries into Postgres through {@link
+   * ParseOptions.onEntry} does not, and neither can be guessed from here.
+   */
   max?: number;
 }
 
@@ -106,9 +114,22 @@ export interface M3uParser {
    * because the bytes behind them usually still have to be hashed.
    */
   push(line: string): boolean;
-  /** Everything kept so far. The same array throughout; not copied per push. */
+  /** Everything held right now. The same array throughout; not copied per push. */
   readonly entries: M3uEntry[];
-  /** True once `max` entries have been kept. */
+  /**
+   * Take everything held and forget it, so the parser can keep going in bounded
+   * memory. Returns a fresh array; `entries` is empty afterwards.
+   */
+  drain(): M3uEntry[];
+  /**
+   * How many entries have been kept in total, drained or not.
+   *
+   * This is what `max` is measured against, and why it is counted rather than
+   * read off `entries.length` -- a drained parser would otherwise forget it was
+   * ever full and start again from zero.
+   */
+  readonly kept: number;
+  /** True once `max` entries have been kept. False when `max` is unlimited. */
   readonly full: boolean;
 }
 
@@ -125,7 +146,22 @@ export interface M3uParser {
  * at, because a playlist that half-parses is worse than one that does not.
  */
 export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uParser {
-  const entries: M3uEntry[] = [];
+  let entries: M3uEntry[] = [];
+  /*
+   * Counted rather than read off `entries.length`, which drops to zero on every
+   * drain. Both ceiling checks below go through this, so the two cannot drift.
+   */
+  let kept = 0;
+  /*
+   * 0 and NaN mean no ceiling, not "keep nothing".
+   *
+   * `num('PLAYLIST_MAX_CHANNELS', 0)` is how a site says unlimited, and an unset
+   * or unparseable variable arrives the same way. Treating that literally would
+   * turn a missing config line into a playlist with no channels in it -- an
+   * import that succeeds and stores nothing, which is the worst of the three
+   * outcomes because nothing reports it.
+   */
+  const ceiling = Number.isFinite(max) && max > 0 ? max : Number.POSITIVE_INFINITY;
 
   /** `#EXTGRP:` is the other way providers state a group; it applies until changed. */
   let currentGroup: string | null = null;
@@ -136,11 +172,19 @@ export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uP
     get entries() {
       return entries;
     },
+    drain() {
+      const taken = entries;
+      entries = [];
+      return taken;
+    },
+    get kept() {
+      return kept;
+    },
     get full() {
-      return entries.length >= max;
+      return kept >= ceiling;
     },
     push(raw: string): boolean {
-      if (entries.length >= max) return false;
+      if (kept >= ceiling) return false;
       const line = raw.trim();
 
       if (line.startsWith('#EXTGRP:')) {
@@ -172,6 +216,7 @@ export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uP
 
         const group = attrGroup || currentGroup || null;
         entries.push({ title: name, group, url, kind: entryKind({ url, group }) });
+        kept += 1;
         return true;
       }
 
@@ -223,13 +268,35 @@ export interface StreamOptions extends ParseOptions {
    * belongs -- the policy and its error message are the caller's, not ours.
    */
   onChunk?: (chunk: Uint8Array | string) => void;
+  /**
+   * Take the entries parsed so far, as they are parsed, so the parse holds none.
+   *
+   * Called after each chunk with what that chunk produced -- often zero entries,
+   * sometimes a few hundred -- and then the parser forgets them. It is awaited,
+   * which is the point: the consumer sets the pace, so a caller writing to a
+   * database in batches bounds this parse to one batch of memory no matter how
+   * large the list is.
+   *
+   * Without it, "no ceiling" is not really no ceiling: the result array becomes
+   * the ceiling, and on the 583MB catalogue that prompted this -- roughly 2.6
+   * million entries -- that array alone is more heap than the container has.
+   *
+   * `entries` in the result is empty when this is given. Count with `kept`.
+   *
+   * Throwing (or rejecting) aborts the parse and cancels the stream, same as
+   * {@link StreamOptions.onChunk}.
+   */
+  onEntries?: (entries: M3uEntry[]) => void | Promise<void>;
 }
 
 export interface StreamResult {
+  /** Empty when `onEntries` took them; use {@link StreamResult.kept} to count. */
   entries: M3uEntry[];
+  /** How many entries were kept, whether retained or handed over. */
+  kept: number;
   /** Bytes seen. String chunks are counted by length, having no encoding here. */
   bytes: number;
-  /** True if `max` was reached and later entries were dropped. */
+  /** True if `max` was reached and later entries were dropped. Never with no ceiling. */
   truncated: boolean;
 }
 
@@ -245,10 +312,16 @@ export interface StreamResult {
  * because `onChunk` is usually a hash and a hash of most of a file is worth
  * nothing. Past that point the decoding and splitting stop, so the tail of an
  * oversized list costs only the read.
+ *
+ * Pass `onEntries` and the parse holds nothing across chunks: entries are handed
+ * over as they are found and `entries` comes back empty. That is the form a
+ * server ingesting a catalogue into a database wants, and it is what makes
+ * `max: Infinity` a sensible thing to ask for -- without it, "no ceiling" only
+ * moves the ceiling to the result array.
  */
 export async function parseM3uStream(
   chunks: AsyncIterable<Uint8Array | string>,
-  { max = MAX_CHANNELS, onChunk }: StreamOptions = {}
+  { max = MAX_CHANNELS, onEntries, onChunk }: StreamOptions = {}
 ): Promise<StreamResult> {
   const parser = createM3uParser({ max });
   const decoder = new TextDecoder('utf-8');
@@ -277,6 +350,11 @@ export async function parseM3uStream(
         break;
       }
     }
+
+    // Handed over and forgotten, once per chunk. Awaited here rather than per
+    // entry because `push` is synchronous and a consumer that writes somewhere
+    // needs to be able to make the parse wait for it.
+    if (onEntries) await onEntries(parser.drain());
   }
 
   if (!truncated) {
@@ -286,5 +364,10 @@ export async function parseM3uStream(
     if (tail) parser.push(tail);
   }
 
-  return { entries: parser.entries, bytes, truncated: truncated || parser.full };
+  // The last entry lands on the flushed tail, after the final chunk was drained,
+  // so a consumer that is not offered this one loses exactly one channel -- the
+  // ordinary shape of a file with no trailing newline.
+  if (onEntries) await onEntries(parser.drain());
+
+  return { entries: parser.entries, kept: parser.kept, bytes, truncated: truncated || parser.full };
 }

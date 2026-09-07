@@ -228,6 +228,68 @@ describe('parseM3uStream', () => {
     expect(got.entries.map((c) => c.title)).toEqual(['A', 'B']);
   });
 
+  it('holds nothing across chunks when onEntries takes them, and still hashes it all', async () => {
+    // No trailing newline: the last entry lands on the flushed tail, after the
+    // final chunk has been drained. Losing it is the obvious bug here.
+    const many = Array.from({ length: 2000 }, (_, i) =>
+      [`#EXTINF:-1,Ch ${i}`, `https://ok.test/${i}.ts`].join('\n')
+    ).join('\n');
+    const taken: string[] = [];
+    let biggestHeld = 0;
+    let seen = 0;
+    const got = await parseM3uStream(inChunks(many, 64), {
+      max: Number.POSITIVE_INFINITY,
+      onEntries: (batch) => {
+        biggestHeld = Math.max(biggestHeld, batch.length);
+        for (const e of batch) taken.push(e.title);
+      },
+      onChunk: (c) => {
+        seen += typeof c === 'string' ? c.length : c.byteLength;
+      },
+    });
+    expect(taken).toHaveLength(2000);
+    expect(taken[0]).toBe('Ch 0');
+    expect(taken[1999]).toBe('Ch 1999');
+    expect(taken).toEqual(parseM3u(many).map((e) => e.title));
+    // The whole point: what the parse held at once is a chunk's worth, not 2000.
+    expect(biggestHeld).toBeLessThan(20);
+    expect(got.kept).toBe(2000);
+    expect(got.entries).toEqual([]);
+    expect(got.truncated).toBe(false);
+    expect(seen).toBe(new TextEncoder().encode(many).byteLength);
+  });
+
+  it('lets onEntries set the pace, so a slow consumer is not raced', async () => {
+    const list = Array.from({ length: 500 }, (_, i) =>
+      [`#EXTINF:-1,Ch ${i}`, `https://ok.test/${i}.ts`].join('\n')
+    ).join('\n');
+    const order: string[] = [];
+    let inFlight = 0;
+    await parseM3uStream(inChunks(list, 128), {
+      max: Number.POSITIVE_INFINITY,
+      onEntries: async (batch) => {
+        // Overlapping calls would mean the parse ran ahead of the writer, which
+        // is exactly the unbounded memory this exists to prevent.
+        expect(inFlight).toBe(0);
+        inFlight += 1;
+        await new Promise((r) => setTimeout(r, 0));
+        for (const e of batch) order.push(e.title);
+        inFlight -= 1;
+      },
+    });
+    expect(order).toEqual(parseM3u(list).map((e) => e.title));
+  });
+
+  it('aborts the parse when onEntries rejects', async () => {
+    await expect(
+      parseM3uStream(inChunks(big, 64), {
+        onEntries: async () => {
+          throw new Error('no room');
+        },
+      })
+    ).rejects.toThrow('no room');
+  });
+
   it('lets the caller abort mid-stream by throwing from onChunk', async () => {
     // Where a size ceiling belongs: the policy and the wording are the caller's.
     let read = 0;
@@ -259,4 +321,39 @@ describe('createM3uParser', () => {
     expect(p.push('#EXTINF:-1,Two')).toBe(false);
     expect(p.entries).toHaveLength(1);
   });
+
+  it('hands entries over on drain and forgets them', () => {
+    const p = createM3uParser();
+    p.push('#EXTINF:-1,One');
+    p.push('https://ok.test/1.ts');
+    expect(p.drain().map((e) => e.title)).toEqual(['One']);
+    expect(p.entries).toEqual([]);
+    p.push('#EXTINF:-1,Two');
+    p.push('https://ok.test/2.ts');
+    expect(p.drain().map((e) => e.title)).toEqual(['Two']);
+  });
+
+  it('counts kept across drains, so max still bites', () => {
+    const p = createM3uParser({ max: 2 });
+    for (const line of ['#EXTINF:-1,One', 'https://ok.test/1.ts']) p.push(line);
+    // The array is empty again, but the ceiling must not reset with it.
+    p.drain();
+    expect(p.kept).toBe(1);
+    expect(p.full).toBe(false);
+    for (const line of ['#EXTINF:-1,Two', 'https://ok.test/2.ts']) p.push(line);
+    expect(p.kept).toBe(2);
+    expect(p.full).toBe(true);
+    expect(p.push('#EXTINF:-1,Three')).toBe(false);
+  });
+
+  it.each([Number.POSITIVE_INFINITY, 0, Number.NaN])(
+    'treats max=%p as no ceiling rather than as keep-nothing',
+    (max) => {
+      const p = createM3uParser({ max });
+      p.push('#EXTINF:-1,One');
+      p.push('https://ok.test/1.ts');
+      expect(p.kept).toBe(1);
+      expect(p.full).toBe(false);
+    }
+  );
 });
