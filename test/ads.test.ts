@@ -194,3 +194,53 @@ describe('ad breaks', () => {
     expect(root.querySelector('.pux-ad')).toBeNull();
   });
 });
+
+describe('audio adverts', () => {
+  it('an mp3 plays without covering the artwork', async () => {
+    const ads = attachAds(
+      root,
+      media,
+      { next: () => 'https://ads.example/spot.mp3', everySeconds: 10 },
+      now,
+    );
+    const audio = root.querySelector('.pux-ad__audio') as HTMLAudioElement;
+    audio.play = vi.fn(() => Promise.resolve());
+
+    media.dispatchEvent(new Event('play'));
+    watch(11_000);
+    await vi.waitFor(() => expect(ads.playing).toBe(true));
+
+    expect(audio.play).toHaveBeenCalled();
+    expect(root.querySelector('.pux-ad')!.classList.contains('pux-ad--audio')).toBe(true);
+  });
+
+  it('the host can say which kind it is when the URL does not', async () => {
+    const ads = attachAds(
+      root,
+      media,
+      { next: () => ({ url: 'https://cdn.example/stream?id=9', kind: 'audio' as const }), everySeconds: 10 },
+      now,
+    );
+    const audio = root.querySelector('.pux-ad__audio') as HTMLAudioElement;
+    audio.play = vi.fn(() => Promise.resolve());
+    media.dispatchEvent(new Event('play'));
+    watch(11_000);
+    await vi.waitFor(() => expect(ads.playing).toBe(true));
+    expect(audio.play).toHaveBeenCalled();
+  });
+
+  it('an unrecognised URL is treated as video, which still plays either way', async () => {
+    const ads = attachAds(
+      root,
+      media,
+      { next: () => 'https://cdn.example/creative', everySeconds: 10 },
+      now,
+    );
+    const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
+    video.play = vi.fn(() => Promise.resolve());
+    media.dispatchEvent(new Event('play'));
+    watch(11_000);
+    await vi.waitFor(() => expect(ads.playing).toBe(true));
+    expect(video.play).toHaveBeenCalled();
+  });
+});

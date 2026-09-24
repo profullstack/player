@@ -11,13 +11,27 @@
  * Nothing here decides who sees an advert. The host knows whether someone is on
  * a paid plan; it says so by not passing this at all.
  */
+/**
+ * One advert.
+ *
+ * A music player wants an MP3, not a video laid over a record sleeve, so the
+ * kind travels with the creative. Left off, it is inferred from the extension,
+ * and anything unrecognised is treated as video, which is the safe guess: an
+ * audio file in a video element still plays, a video in an audio element loses
+ * its picture.
+ */
+export interface AdCreative {
+  url: string;
+  kind?: 'audio' | 'video';
+}
+
 export interface AdBreakOptions {
   /**
    * The next advert to play, or null to skip this break. Called once per break,
    * so a host can rotate creatives, respect a frequency cap, or check a
    * subscription that changed since the page loaded.
    */
-  next: () => Promise<string | null> | string | null;
+  next: () => Promise<string | AdCreative | null> | string | AdCreative | null;
   /** Content seconds between breaks. */
   everySeconds?: number;
   /** Play one before the content starts. */
@@ -41,6 +55,13 @@ export interface AdController {
 const DEFAULT_EVERY = 300;
 const DEFAULT_MAX = 120;
 
+const AUDIO_EXTENSIONS = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)(\?|#|$)/i;
+
+function creativeOf(value: string | AdCreative): AdCreative {
+  const creative = typeof value === 'string' ? { url: value } : value;
+  return { url: creative.url, kind: creative.kind ?? (AUDIO_EXTENSIONS.test(creative.url) ? 'audio' : 'video') };
+}
+
 export function attachAds(
   root: HTMLElement,
   media: HTMLMediaElement,
@@ -61,14 +82,27 @@ export function attachAds(
   layer.className = 'pux-ad';
   layer.hidden = true;
 
-  const ad = document.createElement('video');
-  ad.className = 'pux-ad__video';
-  ad.playsInline = true;
-  ad.preload = 'auto';
+  const video = document.createElement('video');
+  video.className = 'pux-ad__video';
+  video.playsInline = true;
+  video.preload = 'auto';
+
+  // An audio advert gets no picture, only the badge and the countdown. Laying a
+  // black rectangle over a music player to play an MP3 would hide the artwork
+  // for no reason.
+  const audio = document.createElement('audio');
+  audio.className = 'pux-ad__audio';
+  audio.preload = 'auto';
+
+  let ad: HTMLMediaElement = video;
   // An advert that arrives muted is an advert nobody hears, which is the whole
   // complaint. It plays at the volume the viewer chose for the programme.
-  ad.muted = media.muted;
-  ad.volume = media.volume;
+  for (const el of [video, audio]) {
+    // An advert that arrives muted is an advert nobody hears, which is the
+    // whole complaint. It plays at the volume chosen for the programme.
+    el.muted = media.muted;
+    el.volume = media.volume;
+  }
 
   const badge = document.createElement('span');
   badge.className = 'pux-ad__badge';
@@ -79,7 +113,7 @@ export function attachAds(
   skip.className = 'pux-ad__skip';
   skip.hidden = true;
 
-  layer.append(ad, badge, skip);
+  layer.append(video, audio, badge, skip);
   root.append(layer);
 
   /** Count only time actually watched, so a paused tab does not owe an advert. */
@@ -101,16 +135,20 @@ export function attachAds(
     watchedMs = 0;
     lastTick = null;
 
-    let url: string | null = null;
+    let picked: string | AdCreative | null = null;
     try {
-      url = await options.next();
+      picked = await options.next();
     } catch (error) {
       options.onError?.(error);
     }
-    if (!url || destroyed) {
+    if (!picked || destroyed) {
       playing = false;
       return;
     }
+    const creative = creativeOf(picked);
+    const url = creative.url;
+    // Point the shared handlers at whichever element will carry this one.
+    ad = creative.kind === 'audio' ? audio : video;
 
     const index = breaks++;
     const wasPlaying = !media.paused;
@@ -121,6 +159,7 @@ export function attachAds(
     ad.muted = media.muted;
     ad.volume = media.volume;
     layer.hidden = false;
+    layer.classList.toggle('pux-ad--audio', creative.kind === 'audio');
     root.classList.add('pux-player--ad');
     options.onBreakStart?.({ url, index });
 
@@ -129,7 +168,7 @@ export function attachAds(
       if (!playing) return;
       skipped = viaSkip;
       cleanup();
-      options.onBreakEnd?.({ url: url!, index, skipped });
+      options.onBreakEnd?.({ url, index, skipped });
       if (wasPlaying && !destroyed) void media.play().catch(() => {});
     };
 
@@ -143,6 +182,7 @@ export function attachAds(
       ad.removeAttribute('src');
       ad.load();
       layer.hidden = true;
+      layer.classList.remove('pux-ad--audio');
       skip.hidden = true;
       root.classList.remove('pux-player--ad');
       playing = false;
@@ -204,8 +244,10 @@ export function attachAds(
     lastTick = null;
   };
   const syncVolume = (): void => {
-    ad.muted = media.muted;
-    ad.volume = media.volume;
+    for (const el of [video, audio]) {
+      el.muted = media.muted;
+      el.volume = media.volume;
+    }
   };
 
   media.addEventListener('timeupdate', onTimeUpdate);
@@ -220,7 +262,8 @@ export function attachAds(
       media.removeEventListener('play', onPlay);
       media.removeEventListener('pause', onPause);
       media.removeEventListener('volumechange', syncVolume);
-      ad.pause();
+      video.pause();
+      audio.pause();
       layer.remove();
     },
     get playing(): boolean {

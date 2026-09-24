@@ -155,3 +155,18 @@ Worth knowing:
 - `next` returning `null` skips that break, which is where a frequency cap or a
   subscription that changed since page load belongs.
 - The programme's controls are inert while an advert is up.
+
+### Audio adverts
+
+A music player wants an MP3, not a video laid over the artwork. Return one and
+it plays without a picture, leaving the sleeve visible behind the badge:
+
+```js
+ads: { next: () => 'https://ads.example/spot.mp3' }
+ads: { next: () => ({ url: '/ad?id=9', kind: 'audio' }) }   // when the URL does not say
+```
+
+The kind is inferred from the extension (mp3, m4a, aac, ogg, opus, wav, flac)
+and anything unrecognised is treated as video, which is the safe guess: an audio
+file in a video element still plays, a video in an audio element loses its
+picture.

@@ -561,3 +561,20 @@
   pointer-events: none;
   opacity: 0;
 }
+
+/*
+ * An audio advert has no picture. The layer stays only to carry the badge and
+ * the countdown, so the artwork underneath is not covered by a black rectangle
+ * for the length of an MP3.
+ */
+.pux-ad--audio {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.pux-ad--audio .pux-ad__video {
+  display: none;
+}
+
+.pux-ad__audio {
+  display: none;
+}

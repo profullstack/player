@@ -21,7 +21,7 @@
 
 export { createPlayer, type PlayerHandle, type PlayerOptions } from './core/player';
 export { attachSource, type AttachOptions, type AttachedSource } from './core/attach';
-export { attachAds, type AdBreakOptions, type AdController } from './core/ads';
+export { attachAds, type AdBreakOptions, type AdController, type AdCreative } from './core/ads';
 export { formatTime, formatTimeParam, parseTimeParam } from './core/time';
 export {
   activeChapter,
