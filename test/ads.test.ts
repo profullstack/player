@@ -244,3 +244,46 @@ describe('audio adverts', () => {
     expect(video.play).toHaveBeenCalled();
   });
 });
+
+describe('works without the stylesheet', () => {
+  it('positions itself, since a host driving engines directly never loads player.css', () => {
+    attachAds(root, media, { next: () => 'x.mp4', everySeconds: 10 }, now);
+    const layer = root.querySelector('.pux-ad') as HTMLElement;
+    // The first deployment shipped an advert that played correctly and was
+    // invisible, because these lived only in a stylesheet nobody imported.
+    expect(layer.style.position).toBe('absolute');
+    expect(layer.style.inset).toBe('0');
+    expect(layer.style.zIndex).toBe('3');
+  });
+
+  it('makes the stage a containing block, or the advert covers the page', () => {
+    root.style.position = '';
+    attachAds(root, media, { next: () => 'x.mp4', everySeconds: 10 }, now);
+    expect(root.style.position).toBe('relative');
+  });
+
+  it('leaves a stage that is already positioned alone', () => {
+    root.style.position = 'fixed';
+    attachAds(root, media, { next: () => 'x.mp4', everySeconds: 10 }, now);
+    expect(root.style.position).toBe('fixed');
+  });
+
+  it('an audio advert does not paint over the artwork', async () => {
+    const ads = attachAds(
+      root,
+      media,
+      { next: () => 'https://ads.example/spot.mp3', everySeconds: 10 },
+      now,
+    );
+    const audio = root.querySelector('.pux-ad__audio') as HTMLAudioElement;
+    audio.play = vi.fn(() => Promise.resolve());
+    media.dispatchEvent(new Event('play'));
+    watch(11_000);
+    await vi.waitFor(() => expect(ads.playing).toBe(true));
+
+    const layer = root.querySelector('.pux-ad') as HTMLElement;
+    const video = root.querySelector('.pux-ad__video') as HTMLElement;
+    expect(video.style.display).toBe('none');
+    expect(layer.style.background).not.toBe('#000');
+  });
+});

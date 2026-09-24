@@ -81,11 +81,37 @@ export function attachAds(
   const layer = document.createElement('div');
   layer.className = 'pux-ad';
   layer.hidden = true;
+  // Structure inline, not in the stylesheet.
+  //
+  // A host that drives the engines directly through attachSource has its own
+  // controls and never loads player.css, which is exactly how the first
+  // deployment shipped an advert that played correctly and was invisible: an
+  // unpositioned div behind the page. Only the geometry is set here; colour and
+  // type stay in the stylesheet for anyone who does load it.
+  Object.assign(layer.style, {
+    position: 'absolute',
+    inset: '0',
+    zIndex: '3',
+    display: 'grid',
+    placeItems: 'center',
+    background: '#000',
+  } satisfies Partial<CSSStyleDeclaration>);
+
+  // The stage has to be a containing block, or `inset: 0` resolves against the
+  // page and the advert covers the whole document.
+  const stagePosition = getComputedStyle(root).position;
+  if (!stagePosition || stagePosition === 'static') root.style.position = 'relative';
 
   const video = document.createElement('video');
   video.className = 'pux-ad__video';
   video.playsInline = true;
   video.preload = 'auto';
+  Object.assign(video.style, {
+    width: '100%',
+    height: '100%',
+    objectFit: 'contain',
+    background: '#000',
+  } satisfies Partial<CSSStyleDeclaration>);
 
   // An audio advert gets no picture, only the badge and the countdown. Laying a
   // black rectangle over a music player to play an MP3 would hide the artwork
@@ -107,11 +133,35 @@ export function attachAds(
   const badge = document.createElement('span');
   badge.className = 'pux-ad__badge';
   badge.textContent = 'Ad';
+  Object.assign(badge.style, {
+    position: 'absolute',
+    top: '0.75rem',
+    left: '0.75rem',
+    padding: '0.15rem 0.5rem',
+    borderRadius: '0.25rem',
+    background: 'rgb(0 0 0 / 0.65)',
+    color: '#fff',
+    font: '600 0.75rem/1.4 system-ui, sans-serif',
+    letterSpacing: '0.04em',
+    textTransform: 'uppercase',
+  } satisfies Partial<CSSStyleDeclaration>);
 
   const skip = document.createElement('button');
   skip.type = 'button';
   skip.className = 'pux-ad__skip';
   skip.hidden = true;
+  Object.assign(skip.style, {
+    position: 'absolute',
+    right: '1rem',
+    bottom: '1rem',
+    padding: '0.5rem 0.9rem',
+    border: '1px solid rgb(255 255 255 / 0.4)',
+    borderRadius: '0.3rem',
+    background: 'rgb(0 0 0 / 0.6)',
+    color: '#fff',
+    font: '500 0.85rem/1 system-ui, sans-serif',
+    cursor: 'pointer',
+  } satisfies Partial<CSSStyleDeclaration>);
 
   layer.append(video, audio, badge, skip);
   root.append(layer);
@@ -160,6 +210,9 @@ export function attachAds(
     ad.volume = media.volume;
     layer.hidden = false;
     layer.classList.toggle('pux-ad--audio', creative.kind === 'audio');
+    const isAudio = creative.kind === 'audio';
+    layer.style.background = isAudio ? 'rgb(0 0 0 / 0.35)' : '#000';
+    video.style.display = isAudio ? 'none' : '';
     root.classList.add('pux-player--ad');
     options.onBreakStart?.({ url, index });
 
