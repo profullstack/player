@@ -119,3 +119,39 @@ The unit tests inject a fake engine, which is the design under test: the bar is 
 ## Licence
 
 MIT
+
+## Ad breaks
+
+Interrupt the programme on a timer for viewers who are not on a paid plan.
+
+```js
+createPlayer(root, {
+  src: channel.url,
+  ads: user.plan === 'free'
+    ? {
+        next: () => fetch('/api/ads/next').then((r) => r.json()).then((a) => a.url),
+        everySeconds: 300,
+        preroll: true,
+        skipAfter: 5,        // omit for unskippable
+      }
+    : undefined,             // paid: no adverts, no code path
+});
+```
+
+Nothing in the player decides who sees an advert. The host knows who is paying,
+and says so by not passing `ads` at all.
+
+Worth knowing:
+
+- **The programme is never re-sourced.** The advert plays in its own element over
+  the stage and the content element is only paused. Swapping `src` would tear
+  down the HLS or MPEG-TS engine and, on a live channel, hand the viewer back a
+  different moment than the one they left.
+- **Only watched time counts.** A paused tab accrues nothing, so someone who
+  leaves for an hour does not come back owing three adverts.
+- **The advert takes the viewer's volume**, not a muted default.
+- **An advert that fails is not the viewer's problem.** A load error, or one that
+  stalls past `maxSeconds`, ends the break and resumes the programme.
+- `next` returning `null` skips that break, which is where a frequency cap or a
+  subscription that changed since page load belongs.
+- The programme's controls are inert while an advert is up.

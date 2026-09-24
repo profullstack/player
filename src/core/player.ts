@@ -46,6 +46,7 @@ import {
 } from './source';
 import type { EngineFactory, QualityLevel } from '../engines/types';
 import { attachSource, type AttachedSource } from './attach';
+import { attachAds, type AdBreakOptions } from './ads';
 
 export interface PlayerOptions {
   src: string;
@@ -99,6 +100,11 @@ export interface PlayerOptions {
   userAgent?: string;
   storage?: Storage | null;
   now?: () => number;
+  /**
+   * Interrupt the programme with adverts. Omit it and there are none: the host
+   * knows who is on a paid plan, and says so by not passing this.
+   */
+  ads?: AdBreakOptions;
 }
 
 export interface PlayerHandle {
@@ -538,6 +544,9 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
   }
 
   function togglePlay(): void {
+    // An advert owns the screen while it runs; pressing play under it would
+    // start the programme behind the creative.
+    if (ads?.playing) return;
     if (media.paused || media.ended) void media.play().catch(() => undefined);
     else media.pause();
   }
@@ -875,6 +884,10 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
     showNotice(choice.unplayable);
   }
 
+  // Adverts, when the host asked for them. They own a layer of their own over
+  // the stage and only pause the programme, so no engine is disturbed.
+  const ads = options.ads ? attachAds(root, media, options.ads, now) : null;
+
   // Attaching is asynchronous because every engine but the native one is loaded
   // on demand. Nothing above depends on it having happened.
   const attaching = attachEngine();
@@ -936,6 +949,7 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
       if (destroyed) return;
       destroyed = true;
       persist();
+      ads?.destroy();
       if (hideTimer) clearTimeout(hideTimer);
       if (noticeTimer) clearTimeout(noticeTimer);
       for (const cleanup of cleanups) cleanup();
