@@ -48,6 +48,13 @@ export interface AdBreakOptions {
 
 export interface AdController {
   destroy: () => void;
+  /**
+   * Run a break now, without waiting for the timer.
+   *
+   * What a host needs to show somebody the thing working, and what a pre-roll
+   * is underneath. Does nothing if one is already on screen.
+   */
+  play: () => Promise<void>;
   /** True while an advert holds the screen; the controls consult this. */
   readonly playing: boolean;
 }
@@ -309,6 +316,9 @@ export function attachAds(
   media.addEventListener('volumechange', syncVolume);
 
   return {
+    play(): Promise<void> {
+      return run();
+    },
     destroy(): void {
       destroyed = true;
       media.removeEventListener('timeupdate', onTimeUpdate);

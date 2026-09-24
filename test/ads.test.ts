@@ -287,3 +287,26 @@ describe('works without the stylesheet', () => {
     expect(layer.style.background).not.toBe('#000');
   });
 });
+
+describe('playing a break on demand', () => {
+  it('runs one without waiting for the timer', async () => {
+    const next = vi.fn(() => 'https://ads.example/one.mp4');
+    const ads = attachAds(root, media, { next, everySeconds: 3600 }, now);
+    const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
+    video.play = vi.fn(() => Promise.resolve());
+
+    await ads.play();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(ads.playing).toBe(true);
+    expect((root.querySelector(".pux-ad") as HTMLElement).hidden).toBe(false);
+  });
+
+  it('does nothing when one is already on screen', async () => {
+    const next = vi.fn(() => 'https://ads.example/one.mp4');
+    const ads = attachAds(root, media, { next, everySeconds: 3600 }, now);
+    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() => Promise.resolve());
+    await ads.play();
+    await ads.play();
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+});
