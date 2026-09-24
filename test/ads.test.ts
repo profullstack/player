@@ -379,3 +379,56 @@ describe('fading in and out', () => {
     expect(layer.style.opacity).toBe('1');
   });
 });
+
+describe('showing the viewer the advert', () => {
+  function stubBox(el: HTMLElement, top: number, height: number) {
+    el.getBoundingClientRect = () =>
+      ({ top, bottom: top + height, height, left: 0, right: 0, width: 800, x: 0, y: top, toJSON: () => {} }) as DOMRect;
+  }
+
+  it('scrolls the stage in when it is below the fold', async () => {
+    // The bug this exists for: the player sat one pixel under a 513px viewport,
+    // so every break played perfectly where nobody could see it.
+    Object.defineProperty(window, 'innerHeight', { value: 513, configurable: true });
+    stubBox(root, 512, 611);
+    const scrolled = vi.fn();
+    root.scrollIntoView = scrolled;
+
+    const ads = attachAds(root, media, { next: () => 'x.mp4', everySeconds: 3600 }, now);
+    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() => Promise.resolve());
+    await ads.play();
+
+    expect(scrolled).toHaveBeenCalled();
+  });
+
+  it('leaves the page alone when the stage is already in view', async () => {
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true });
+    stubBox(root, 40, 500);
+    const scrolled = vi.fn();
+    root.scrollIntoView = scrolled;
+
+    const ads = attachAds(root, media, { next: () => 'x.mp4', everySeconds: 3600 }, now);
+    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() => Promise.resolve());
+    await ads.play();
+
+    expect(scrolled).not.toHaveBeenCalled();
+  });
+
+  it('a host that places the player itself can turn it off', async () => {
+    Object.defineProperty(window, 'innerHeight', { value: 513, configurable: true });
+    stubBox(root, 512, 611);
+    const scrolled = vi.fn();
+    root.scrollIntoView = scrolled;
+
+    const ads = attachAds(
+      root,
+      media,
+      { next: () => 'x.mp4', everySeconds: 3600, revealStage: false },
+      now,
+    );
+    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() => Promise.resolve());
+    await ads.play();
+
+    expect(scrolled).not.toHaveBeenCalled();
+  });
+});

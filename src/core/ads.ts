@@ -49,6 +49,15 @@ export interface AdBreakOptions {
    * Zero cuts straight, which is what this used to do.
    */
   fadeSeconds?: number;
+  /**
+   * Bring the stage into view when a break starts, if it is not already there.
+   *
+   * On by default, and not fussiness: a player that sits below the fold plays
+   * the advert perfectly where nobody can see it, which is indistinguishable
+   * from the advert never running. Pass false when the host places the player
+   * itself, such as full screen.
+   */
+  revealStage?: boolean;
 }
 
 export interface AdController {
@@ -119,6 +128,17 @@ export function attachAds(
   const everyMs = Math.max(5, options.everySeconds ?? DEFAULT_EVERY) * 1000;
   const maxMs = Math.max(5, options.maxSeconds ?? DEFAULT_MAX) * 1000;
   const fade = Math.max(0, options.fadeSeconds ?? DEFAULT_FADE);
+  const reveal = options.revealStage !== false;
+
+  /** Scroll the stage in only when most of it is actually off screen. */
+  function revealIfHidden(): void {
+    if (!reveal || typeof window === 'undefined') return;
+    const box = root.getBoundingClientRect();
+    const visible = Math.min(box.bottom, window.innerHeight) - Math.max(box.top, 0);
+    if (visible >= box.height * 0.6) return;
+    const smooth = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    root.scrollIntoView({ block: 'center', behavior: smooth ? 'smooth' : 'auto' });
+  }
 
   let watchedMs = 0;
   let lastTick: number | null = null;
@@ -267,6 +287,7 @@ export function attachAds(
     ad.muted = media.muted;
     ad.volume = 0;
     layer.style.opacity = '0';
+    revealIfHidden();
     layer.hidden = false;
     layer.classList.toggle('pux-ad--audio', creative.kind === 'audio');
     const isAudio = creative.kind === 'audio';
