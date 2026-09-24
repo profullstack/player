@@ -155,6 +155,11 @@ Worth knowing:
 - `next` returning `null` skips that break, which is where a frequency cap or a
   subscription that changed since page load belongs.
 - The programme's controls are inert while an advert is up.
+- **Breaks fade, both ways.** The programme is taken down before it is paused
+  and brought back up after, and the advert fades in and out with it, rather
+  than the sound slamming shut and a picture appearing. `fadeSeconds` sets the
+  length; `0` cuts straight. The listener's own level is always restored, even
+  when an advert fails.
 
 ### Audio adverts
 

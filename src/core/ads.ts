@@ -44,6 +44,11 @@ export interface AdBreakOptions {
   onBreakEnd?: (info: { url: string; index: number; skipped: boolean }) => void;
   /** An advert that will not load must never cost the viewer their programme. */
   onError?: (error: unknown) => void;
+  /**
+   * How long the programme takes to go and the advert to arrive, in seconds.
+   * Zero cuts straight, which is what this used to do.
+   */
+  fadeSeconds?: number;
 }
 
 export interface AdController {
@@ -61,6 +66,42 @@ export interface AdController {
 
 const DEFAULT_EVERY = 300;
 const DEFAULT_MAX = 120;
+const DEFAULT_FADE = 0.4;
+
+/**
+ * Ramp a value and resolve when it lands.
+ *
+ * Volume and opacity both, because a break that only dips the picture still
+ * slams the sound, and one that only fades the sound still cuts the picture.
+ */
+function ramp(
+  from: number,
+  to: number,
+  seconds: number,
+  apply: (value: number) => void,
+): Promise<void> {
+  if (seconds <= 0 || from === to) {
+    apply(to);
+    return Promise.resolve();
+  }
+  // A timer rather than requestAnimationFrame. rAF does not tick in a
+  // headless DOM, so a ramp awaiting it never resolves and the whole break
+  // stops half done; at these lengths the difference is not visible anyway.
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const ms = seconds * 1000;
+    const step = (): void => {
+      const p = Math.min(1, (Date.now() - start) / ms);
+      apply(from + (to - from) * p);
+      if (p < 1) setTimeout(step, 16);
+      else resolve();
+    };
+    step();
+  });
+}
+
+/** Volume must stay in range, and a browser throws on anything outside it. */
+const safeVolume = (v: number): number => Math.min(1, Math.max(0, v));
 
 const AUDIO_EXTENSIONS = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)(\?|#|$)/i;
 
@@ -77,6 +118,7 @@ export function attachAds(
 ): AdController {
   const everyMs = Math.max(5, options.everySeconds ?? DEFAULT_EVERY) * 1000;
   const maxMs = Math.max(5, options.maxSeconds ?? DEFAULT_MAX) * 1000;
+  const fade = Math.max(0, options.fadeSeconds ?? DEFAULT_FADE);
 
   let watchedMs = 0;
   let lastTick: number | null = null;
@@ -209,12 +251,22 @@ export function attachAds(
 
     const index = breaks++;
     const wasPlaying = !media.paused;
+
+    // The programme's own level, restored whatever happens next. Losing it
+    // would leave someone's music quieter than they set it.
+    const level = media.volume;
+
+    // Take the programme down before pausing it, rather than cutting.
+    await ramp(level, 0, fade, (v) => {
+      media.volume = safeVolume(v);
+    });
     media.pause();
 
     ad.src = url;
     ad.currentTime = 0;
     ad.muted = media.muted;
-    ad.volume = media.volume;
+    ad.volume = 0;
+    layer.style.opacity = '0';
     layer.hidden = false;
     layer.classList.toggle('pux-ad--audio', creative.kind === 'audio');
     const isAudio = creative.kind === 'audio';
@@ -227,9 +279,21 @@ export function attachAds(
     const finish = (viaSkip: boolean): void => {
       if (!playing) return;
       skipped = viaSkip;
-      cleanup();
-      options.onBreakEnd?.({ url, index, skipped });
-      if (wasPlaying && !destroyed) void media.play().catch(() => {});
+      // Leave the same way it arrived: the advert goes, then the programme
+      // comes back up rather than snapping on at full level.
+      void ramp(1, 0, fade, (v) => {
+        layer.style.opacity = String(v);
+        ad.volume = safeVolume(level * v);
+      }).then(() => {
+        cleanup();
+        options.onBreakEnd?.({ url, index, skipped });
+        if (destroyed) return;
+        media.volume = 0;
+        if (wasPlaying) void media.play().catch(() => {});
+        void ramp(0, level, fade, (v) => {
+          media.volume = safeVolume(v);
+        });
+      });
     };
 
     function cleanup(): void {
@@ -283,8 +347,16 @@ export function attachAds(
 
     try {
       await ad.play();
+      // Only once it is actually running, or the picture fades up on a frame
+      // that has not arrived.
+      await ramp(0, 1, fade, (v) => {
+        layer.style.opacity = String(v);
+        ad.volume = safeVolume(level * v);
+      });
     } catch (error) {
       options.onError?.(error);
+      // The programme must not be left silent because an advert failed.
+      media.volume = safeVolume(level);
       finish(false);
     }
   }
