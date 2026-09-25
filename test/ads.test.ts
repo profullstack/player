@@ -53,7 +53,12 @@ describe('ad breaks', () => {
   it('interrupts once the interval is up', async () => {
     const next = vi.fn(() => 'https://ads.example/one.mp4');
     const onBreakStart = vi.fn();
-    const ads = attachAds(root, media, { next, everySeconds: 300, onBreakStart, fadeSeconds: 0 }, now);
+    const ads = attachAds(
+      root,
+      media,
+      { next, everySeconds: 300, onBreakStart, fadeSeconds: 0 },
+      now
+    );
     adElement(root).play = vi.fn(() => Promise.resolve());
 
     media.dispatchEvent(new Event('play'));
@@ -86,7 +91,7 @@ describe('ad breaks', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 10, onBreakEnd, fadeSeconds: 0 },
-      now,
+      now
     );
     const ad = adElement(root);
     ad.play = vi.fn(() => Promise.resolve());
@@ -100,9 +105,7 @@ describe('ad breaks', () => {
 
     ad.dispatchEvent(new Event('ended'));
     await vi.waitFor(() => expect(ads.playing).toBe(false));
-    expect(onBreakEnd).toHaveBeenCalledWith(
-      expect.objectContaining({ index: 0, skipped: false }),
-    );
+    expect(onBreakEnd).toHaveBeenCalledWith(expect.objectContaining({ index: 0, skipped: false }));
     expect(media.play).toHaveBeenCalled();
   });
 
@@ -112,7 +115,7 @@ describe('ad breaks', () => {
       root,
       media,
       { next: () => 'https://ads.example/broken.mp4', everySeconds: 10, onError, fadeSeconds: 0 },
-      now,
+      now
     );
     const ad = adElement(root);
     ad.play = vi.fn(() => Promise.resolve());
@@ -140,7 +143,7 @@ describe('ad breaks', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 10, fadeSeconds: 0 },
-      now,
+      now
     );
     const ad = adElement(root);
     ad.play = vi.fn(() => Promise.resolve());
@@ -156,7 +159,7 @@ describe('ad breaks', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 10, skipAfter: 5, fadeSeconds: 0 },
-      now,
+      now
     );
     const ad = adElement(root);
     ad.play = vi.fn(() => Promise.resolve());
@@ -177,7 +180,7 @@ describe('ad breaks', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 10, fadeSeconds: 0 },
-      now,
+      now
     );
     const ad = adElement(root);
     ad.play = vi.fn(() => Promise.resolve());
@@ -191,7 +194,12 @@ describe('ad breaks', () => {
   });
 
   it('destroy leaves nothing behind', () => {
-    const ads = attachAds(root, media, { next: () => 'x.mp4', everySeconds: 10, fadeSeconds: 0 }, now);
+    const ads = attachAds(
+      root,
+      media,
+      { next: () => 'x.mp4', everySeconds: 10, fadeSeconds: 0 },
+      now
+    );
     expect(root.querySelector('.pux-ad')).not.toBeNull();
     ads.destroy();
     expect(root.querySelector('.pux-ad')).toBeNull();
@@ -204,7 +212,7 @@ describe('audio adverts', () => {
       root,
       media,
       { next: () => 'https://ads.example/spot.mp3', everySeconds: 10, fadeSeconds: 0 },
-      now,
+      now
     );
     const audio = root.querySelector('.pux-ad__audio') as HTMLAudioElement;
     audio.play = vi.fn(() => Promise.resolve());
@@ -221,8 +229,11 @@ describe('audio adverts', () => {
     const ads = attachAds(
       root,
       media,
-      { next: () => ({ url: 'https://cdn.example/stream?id=9', kind: 'audio' as const }), everySeconds: 10 },
-      now,
+      {
+        next: () => ({ url: 'https://cdn.example/stream?id=9', kind: 'audio' as const }),
+        everySeconds: 10,
+      },
+      now
     );
     const audio = root.querySelector('.pux-ad__audio') as HTMLAudioElement;
     audio.play = vi.fn(() => Promise.resolve());
@@ -236,7 +247,7 @@ describe('audio adverts', () => {
       root,
       media,
       { next: () => 'https://cdn.example/creative', everySeconds: 10, fadeSeconds: 0 },
-      now,
+      now
     );
     const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
     video.play = vi.fn(() => Promise.resolve());
@@ -274,7 +285,7 @@ describe('works without the stylesheet', () => {
       root,
       media,
       { next: () => 'https://ads.example/spot.mp3', everySeconds: 10, fadeSeconds: 0 },
-      now,
+      now
     );
     const audio = root.querySelector('.pux-ad__audio') as HTMLAudioElement;
     audio.play = vi.fn(() => Promise.resolve());
@@ -301,13 +312,15 @@ describe('playing a break on demand', () => {
     await ads.play();
     expect(next).toHaveBeenCalledTimes(1);
     expect(ads.playing).toBe(true);
-    expect((root.querySelector(".pux-ad") as HTMLElement).hidden).toBe(false);
+    expect((root.querySelector('.pux-ad') as HTMLElement).hidden).toBe(false);
   });
 
   it('does nothing when one is already on screen', async () => {
     const next = vi.fn(() => 'https://ads.example/one.mp4');
     const ads = attachAds(root, media, { next, everySeconds: 3600, fadeSeconds: 0 }, now);
-    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() => Promise.resolve());
+    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() =>
+      Promise.resolve()
+    );
     await ads.play();
     await ads.play();
     expect(next).toHaveBeenCalledTimes(1);
@@ -321,7 +334,7 @@ describe('fading in and out', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 3600, fadeSeconds: 0.05 },
-      now,
+      now
     );
     const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
     video.play = vi.fn(() => Promise.resolve());
@@ -338,7 +351,7 @@ describe('fading in and out', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 3600, fadeSeconds: 0.05 },
-      now,
+      now
     );
     const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
     video.play = vi.fn(() => Promise.resolve());
@@ -355,7 +368,7 @@ describe('fading in and out', () => {
       root,
       media,
       { next: () => 'https://ads.example/broken.mp4', everySeconds: 3600, fadeSeconds: 0.05 },
-      now,
+      now
     );
     const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
     video.play = vi.fn(() => Promise.reject(new Error('NotAllowedError')));
@@ -370,7 +383,7 @@ describe('fading in and out', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 3600, fadeSeconds: 0 },
-      now,
+      now
     );
     const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
     video.play = vi.fn(() => Promise.resolve());
@@ -383,7 +396,17 @@ describe('fading in and out', () => {
 describe('showing the viewer the advert', () => {
   function stubBox(el: HTMLElement, top: number, height: number) {
     el.getBoundingClientRect = () =>
-      ({ top, bottom: top + height, height, left: 0, right: 0, width: 800, x: 0, y: top, toJSON: () => {} }) as DOMRect;
+      ({
+        top,
+        bottom: top + height,
+        height,
+        left: 0,
+        right: 0,
+        width: 800,
+        x: 0,
+        y: top,
+        toJSON: () => {},
+      }) as DOMRect;
   }
 
   it('scrolls the stage in when it is below the fold', async () => {
@@ -395,7 +418,9 @@ describe('showing the viewer the advert', () => {
     root.scrollIntoView = scrolled;
 
     const ads = attachAds(root, media, { next: () => 'x.mp4', everySeconds: 3600 }, now);
-    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() => Promise.resolve());
+    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() =>
+      Promise.resolve()
+    );
     await ads.play();
 
     expect(scrolled).toHaveBeenCalled();
@@ -408,7 +433,9 @@ describe('showing the viewer the advert', () => {
     root.scrollIntoView = scrolled;
 
     const ads = attachAds(root, media, { next: () => 'x.mp4', everySeconds: 3600 }, now);
-    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() => Promise.resolve());
+    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() =>
+      Promise.resolve()
+    );
     await ads.play();
 
     expect(scrolled).not.toHaveBeenCalled();
@@ -424,9 +451,11 @@ describe('showing the viewer the advert', () => {
       root,
       media,
       { next: () => 'x.mp4', everySeconds: 3600, revealStage: false },
-      now,
+      now
     );
-    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() => Promise.resolve());
+    (root.querySelector('.pux-ad__video') as HTMLVideoElement).play = vi.fn(() =>
+      Promise.resolve()
+    );
     await ads.play();
 
     expect(scrolled).not.toHaveBeenCalled();
@@ -444,7 +473,7 @@ describe('an advert nobody can hear', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 3600, fadeSeconds: 0 },
-      now,
+      now
     );
     const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
     video.play = vi.fn(() => Promise.resolve());
@@ -459,7 +488,7 @@ describe('an advert nobody can hear', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 3600, fadeSeconds: 0 },
-      now,
+      now
     );
     const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
     video.play = vi.fn(() => Promise.resolve());
@@ -474,7 +503,7 @@ describe('an advert nobody can hear', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 3600, fadeSeconds: 0 },
-      now,
+      now
     );
     const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
     video.play = vi.fn(() => Promise.resolve());
@@ -500,7 +529,7 @@ describe('picture-in-picture', () => {
       get: () => holder,
     });
     (HTMLVideoElement.prototype as Pip).requestPictureInPicture = vi.fn(function (
-      this: HTMLVideoElement,
+      this: HTMLVideoElement
     ) {
       holder = this;
       return Promise.resolve({});
@@ -585,7 +614,7 @@ describe('picture-in-picture', () => {
     holder = media;
     const onError = vi.fn();
     (HTMLVideoElement.prototype as Pip).requestPictureInPicture = vi.fn(() =>
-      Promise.reject(new Error('no picture in picture here')),
+      Promise.reject(new Error('no picture in picture here'))
     );
     const { ads, ad } = await breakNow({
       next: () => 'https://ads.example/one.mp4',
@@ -613,7 +642,7 @@ describe('picture-in-picture', () => {
       root,
       media,
       { next: () => 'https://ads.example/one.mp4', everySeconds: 10, fadeSeconds: 0 },
-      now,
+      now
     );
     const ad = adElement(root);
     ad.play = vi.fn(() => Promise.resolve());

@@ -23,12 +23,7 @@ import type { AdBreakOptions } from './ads.js';
  */
 export const GOOD_STANDING = ['active', 'trialing'] as const;
 
-export type EntitlementStatus =
-  | 'active'
-  | 'trialing'
-  | 'past_due'
-  | 'cancelled'
-  | 'expired';
+export type EntitlementStatus = 'active' | 'trialing' | 'past_due' | 'cancelled' | 'expired';
 
 /** The shape this needs. An OpenAccess Entitlement satisfies it as it stands. */
 export interface EntitlementLike {
@@ -47,7 +42,7 @@ export interface EntitlementLike {
 export function entitled(
   entitlements: readonly EntitlementLike[] | null | undefined,
   product: string,
-  now: Date = new Date(),
+  now: Date = new Date()
 ): boolean {
   if (!entitlements?.length) return false;
   const good = new Set<string>(GOOD_STANDING);
@@ -67,9 +62,7 @@ export interface AdsUnlessEntitledOptions {
   product: string;
   /** How the host gets the viewer's entitlements. */
   entitlements: () =>
-    | Promise<readonly EntitlementLike[] | null>
-    | readonly EntitlementLike[]
-    | null;
+    Promise<readonly EntitlementLike[] | null> | readonly EntitlementLike[] | null;
   /** What to run when they have not paid. */
   ads: AdBreakOptions;
   now?: () => Date;
@@ -85,7 +78,7 @@ export interface AdsUnlessEntitledOptions {
  * less than a business that stopped earning without noticing.
  */
 export async function adsUnlessEntitled(
-  options: AdsUnlessEntitledOptions,
+  options: AdsUnlessEntitledOptions
 ): Promise<AdBreakOptions | null> {
   let held: readonly EntitlementLike[] | null = null;
   try {

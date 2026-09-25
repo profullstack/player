@@ -1,4 +1,3 @@
-
 /**
  * Ad breaks.
  *
@@ -93,7 +92,7 @@ function ramp(
   from: number,
   to: number,
   seconds: number,
-  apply: (value: number) => void,
+  apply: (value: number) => void
 ): Promise<void> {
   if (seconds <= 0 || from === to) {
     apply(to);
@@ -186,14 +185,17 @@ const AUDIO_EXTENSIONS = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)(\?|#|$)/i;
 
 function creativeOf(value: string | AdCreative): AdCreative {
   const creative = typeof value === 'string' ? { url: value } : value;
-  return { url: creative.url, kind: creative.kind ?? (AUDIO_EXTENSIONS.test(creative.url) ? 'audio' : 'video') };
+  return {
+    url: creative.url,
+    kind: creative.kind ?? (AUDIO_EXTENSIONS.test(creative.url) ? 'audio' : 'video'),
+  };
 }
 
 export function attachAds(
   root: HTMLElement,
   media: HTMLMediaElement,
   options: AdBreakOptions,
-  now: () => number = () => Date.now(),
+  now: () => number = () => Date.now()
 ): AdController {
   const everyMs = Math.max(5, options.everySeconds ?? DEFAULT_EVERY) * 1000;
   const maxMs = Math.max(5, options.maxSeconds ?? DEFAULT_MAX) * 1000;

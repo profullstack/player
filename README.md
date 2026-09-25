@@ -127,14 +127,18 @@ Interrupt the programme on a timer for viewers who are not on a paid plan.
 ```js
 createPlayer(root, {
   src: channel.url,
-  ads: user.plan === 'free'
-    ? {
-        next: () => fetch('/api/ads/next').then((r) => r.json()).then((a) => a.url),
-        everySeconds: 300,
-        preroll: true,
-        skipAfter: 5,        // omit for unskippable
-      }
-    : undefined,             // paid: no adverts, no code path
+  ads:
+    user.plan === 'free'
+      ? {
+          next: () =>
+            fetch('/api/ads/next')
+              .then((r) => r.json())
+              .then((a) => a.url),
+          everySeconds: 300,
+          preroll: true,
+          skipAfter: 5, // omit for unskippable
+        }
+      : undefined, // paid: no adverts, no code path
 });
 ```
 
@@ -171,11 +175,11 @@ import { adsUnlessEntitled } from '@profullstack/player';
 
 const ads = await adsUnlessEntitled({
   product: 'nixamp.pro',
-  entitlements: () => openaccess.entitlements(),  // your transport, not ours
+  entitlements: () => openaccess.entitlements(), // your transport, not ours
   ads: { next: getAd, everySeconds: 300 },
 });
 
-createPlayer(root, { src, ads });   // null when they have paid
+createPlayer(root, { src, ads }); // null when they have paid
 ```
 
 `active` and `trialing` count as paid; `past_due` does not, because that is a
@@ -199,8 +203,12 @@ A music player wants an MP3, not a video laid over the artwork. Return one and
 it plays without a picture, leaving the sleeve visible behind the badge:
 
 ```js
-ads: { next: () => 'https://ads.example/spot.mp3' }
-ads: { next: () => ({ url: '/ad?id=9', kind: 'audio' }) }   // when the URL does not say
+ads: {
+  next: () => 'https://ads.example/spot.mp3';
+}
+ads: {
+  next: () => ({ url: '/ad?id=9', kind: 'audio' });
+} // when the URL does not say
 ```
 
 The kind is inferred from the extension (mp3, m4a, aac, ogg, opus, wav, flac)

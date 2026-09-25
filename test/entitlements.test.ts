@@ -32,11 +32,15 @@ describe('who counts as paid', () => {
   it('an active row past its period is not honoured', () => {
     // A webhook that never arrived leaves a row at active forever, and
     // honouring it is giving the product away.
-    expect(entitled([ent({ period: { end: '2026-03-01T00:00:00Z' } })], 'nixamp.pro', at)).toBe(false);
+    expect(entitled([ent({ period: { end: '2026-03-01T00:00:00Z' } })], 'nixamp.pro', at)).toBe(
+      false
+    );
   });
 
   it('one that has not started yet is not honoured either', () => {
-    expect(entitled([ent({ period: { start: '2026-09-01T00:00:00Z' } })], 'nixamp.pro', at)).toBe(false);
+    expect(entitled([ent({ period: { start: '2026-09-01T00:00:00Z' } })], 'nixamp.pro', at)).toBe(
+      false
+    );
   });
 
   it('an open-ended period counts', () => {
@@ -76,7 +80,9 @@ describe('deciding whether to run adverts', () => {
     // than a business that stopped earning without noticing.
     const got = await adsUnlessEntitled({
       product: 'nixamp.pro',
-      entitlements: () => { throw new Error('hub down'); },
+      entitlements: () => {
+        throw new Error('hub down');
+      },
       ads,
       now: () => at,
     });
