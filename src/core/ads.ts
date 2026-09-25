@@ -10,6 +10,12 @@
  *
  * Nothing here decides who sees an advert. The host knows whether someone is on
  * a paid plan; it says so by not passing this at all.
+ *
+ * The one place that separate element has to be followed is picture-in-picture.
+ * That window renders one element's frames and nothing else on the page, so an
+ * advert laid over the stage is not in it: the viewer gets a frozen frame of
+ * their paused programme with advert sound over it. The window is therefore
+ * handed to the advert for the length of the break and handed back after.
  */
 /**
  * One advert.
@@ -130,6 +136,52 @@ function levelOf(media: HTMLMediaElement): number {
   return media.volume > 0 ? media.volume : 1;
 }
 
+/**
+ * Safari has never shipped the standard picture-in-picture API and drives the
+ * same window through presentation modes instead. Both spellings are tried, and
+ * a browser that has neither simply keeps the behaviour it had.
+ */
+type PresentationMode = 'inline' | 'picture-in-picture' | 'fullscreen';
+type MaybeWebkitVideo = HTMLMediaElement & {
+  webkitPresentationMode?: PresentationMode;
+  webkitSetPresentationMode?: (mode: PresentationMode) => void;
+};
+
+/** Only a video element can hold the window, and a host may be playing audio. */
+function asVideo(el: HTMLMediaElement | null): HTMLMediaElement | null {
+  return el && el.tagName === 'VIDEO' ? el : null;
+}
+
+/** Whether this element is the one currently in the picture-in-picture window. */
+function inPictureInPicture(el: HTMLMediaElement | null): boolean {
+  if (!el) return false;
+  if (typeof document !== 'undefined' && document.pictureInPictureElement === el) return true;
+  return (el as MaybeWebkitVideo).webkitPresentationMode === 'picture-in-picture';
+}
+
+/**
+ * Move the window to `el`.
+ *
+ * Asked for while another element still holds it, which is deliberate: the
+ * specification skips the user-activation check when the document already has a
+ * picture-in-picture element, and exits the old one on the way in. Requesting
+ * the swap directly is therefore allowed mid-break, where exiting first and
+ * asking again would need a gesture nobody is there to give.
+ */
+async function moveToPictureInPicture(el: HTMLMediaElement): Promise<void> {
+  const webkit = el as MaybeWebkitVideo;
+  const request = (el as HTMLVideoElement).requestPictureInPicture;
+  if (typeof request === 'function') {
+    await request.call(el);
+    return;
+  }
+  if (typeof webkit.webkitSetPresentationMode === 'function') {
+    webkit.webkitSetPresentationMode('picture-in-picture');
+    return;
+  }
+  throw new Error('picture-in-picture is not available here');
+}
+
 const AUDIO_EXTENSIONS = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)(\?|#|$)/i;
 
 function creativeOf(value: string | AdCreative): AdCreative {
@@ -156,6 +208,20 @@ export function attachAds(
     if (visible >= box.height * 0.6) return;
     const smooth = !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     root.scrollIntoView({ block: 'center', behavior: smooth ? 'smooth' : 'auto' });
+  }
+
+  /**
+   * Hand the picture-in-picture window over, reporting a refusal rather than
+   * failing on it. A viewer left looking at a frozen frame is the bug this
+   * exists to fix, but it is still a better outcome than losing the break.
+   */
+  async function movePip(el: HTMLMediaElement | null): Promise<void> {
+    if (!el) return;
+    try {
+      await moveToPictureInPicture(el);
+    } catch (error) {
+      options.onError?.(error);
+    }
   }
 
   let watchedMs = 0;
@@ -289,6 +355,9 @@ export function attachAds(
 
     const index = breaks++;
     const wasPlaying = !media.paused;
+    // An audio advert has no picture to show, so the window is left where it
+    // is: the artwork stays put on the page for the same reason.
+    const wasPictureInPicture = creative.kind !== 'audio' && inPictureInPicture(media);
 
     // The programme's own level, restored whatever happens next. Losing it
     // would leave someone's music quieter than they set it.
@@ -323,7 +392,12 @@ export function attachAds(
       void ramp(1, 0, fade, (v) => {
         layer.style.opacity = String(v);
         ad.volume = safeVolume(level * v);
-      }).then(() => {
+      }).then(async () => {
+        // Before cleanup, not after: dropping the advert's source closes its
+        // picture-in-picture window, and a window that has closed cannot be
+        // handed anywhere. Asking while the advert still holds it is the swap
+        // the specification allows without a fresh gesture.
+        if (wasPictureInPicture && inPictureInPicture(ad)) await movePip(asVideo(media));
         cleanup();
         options.onBreakEnd?.({ url, index, skipped });
         if (destroyed) return;
@@ -386,8 +460,10 @@ export function attachAds(
 
     try {
       await ad.play();
-      // Only once it is actually running, or the picture fades up on a frame
-      // that has not arrived.
+      // Only once it is actually running: a request made at HAVE_NOTHING is
+      // rejected outright, and the picture would fade up on a frame that has
+      // not arrived.
+      if (wasPictureInPicture) await movePip(ad);
       await ramp(0, 1, fade, (v) => {
         layer.style.opacity = String(v);
         ad.volume = safeVolume(level * v);
@@ -432,6 +508,9 @@ export function attachAds(
     },
     destroy(): void {
       destroyed = true;
+      // Removing the layer would take the window down with it and drop the
+      // viewer back on the page. Give it to the programme on the way out.
+      if (inPictureInPicture(ad)) void movePip(asVideo(media));
       media.removeEventListener('timeupdate', onTimeUpdate);
       media.removeEventListener('play', onPlay);
       media.removeEventListener('pause', onPause);
