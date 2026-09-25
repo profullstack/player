@@ -112,6 +112,24 @@ function ramp(
 /** Volume must stay in range, and a browser throws on anything outside it. */
 const safeVolume = (v: number): number => Math.min(1, Math.max(0, v));
 
+/**
+ * The level to play an advert at, given the programme.
+ *
+ * Not simply `media.volume`. A host that routes its audio through a WebAudio
+ * graph — an analyser for a spectrum, a gain node for its own slider — leaves
+ * the element's own volume at whatever it was and governs loudness downstream,
+ * where an advert in a separate element cannot see it. Inheriting a 0 there
+ * produces an advert that plays perfectly and is silent, which is
+ * indistinguishable from a broken one.
+ *
+ * So zero is read as "this host does not keep its level here" rather than as
+ * "silence was chosen", and the advert plays at full. A host that genuinely
+ * wants a muted advert has `muted`, which is carried across untouched.
+ */
+function levelOf(media: HTMLMediaElement): number {
+  return media.volume > 0 ? media.volume : 1;
+}
+
 const AUDIO_EXTENSIONS = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)(\?|#|$)/i;
 
 function creativeOf(value: string | AdCreative): AdCreative {
@@ -196,7 +214,7 @@ export function attachAds(
     // An advert that arrives muted is an advert nobody hears, which is the
     // whole complaint. It plays at the volume chosen for the programme.
     el.muted = media.muted;
-    el.volume = media.volume;
+    el.volume = levelOf(media);
   }
 
   const badge = document.createElement('span');
@@ -274,7 +292,7 @@ export function attachAds(
 
     // The programme's own level, restored whatever happens next. Losing it
     // would leave someone's music quieter than they set it.
-    const level = media.volume;
+    const level = levelOf(media);
 
     // Take the programme down before pausing it, rather than cutting.
     await ramp(level, 0, fade, (v) => {
@@ -399,7 +417,7 @@ export function attachAds(
   const syncVolume = (): void => {
     for (const el of [video, audio]) {
       el.muted = media.muted;
-      el.volume = media.volume;
+      el.volume = levelOf(media);
     }
   };
 

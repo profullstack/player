@@ -432,3 +432,53 @@ describe('showing the viewer the advert', () => {
     expect(scrolled).not.toHaveBeenCalled();
   });
 });
+
+describe('an advert nobody can hear', () => {
+  it('does not inherit a zero level from a WebAudio host', async () => {
+    // A host that routes through an analyser and a gain node leaves the
+    // element's own volume alone and governs loudness downstream, where an
+    // advert in a separate element cannot see it. Inheriting the 0 produced an
+    // advert that played perfectly and was silent.
+    media.volume = 0;
+    const ads = attachAds(
+      root,
+      media,
+      { next: () => 'https://ads.example/one.mp4', everySeconds: 3600, fadeSeconds: 0 },
+      now,
+    );
+    const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
+    video.play = vi.fn(() => Promise.resolve());
+
+    await ads.play();
+    await vi.waitFor(() => expect(video.volume).toBeGreaterThan(0));
+  });
+
+  it('still honours a level the host actually set', async () => {
+    media.volume = 0.35;
+    const ads = attachAds(
+      root,
+      media,
+      { next: () => 'https://ads.example/one.mp4', everySeconds: 3600, fadeSeconds: 0 },
+      now,
+    );
+    const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
+    video.play = vi.fn(() => Promise.resolve());
+    await ads.play();
+    await vi.waitFor(() => expect(video.volume).toBeCloseTo(0.35, 1));
+  });
+
+  it('a host that genuinely wants silence still gets it, through muted', async () => {
+    media.volume = 0;
+    media.muted = true;
+    const ads = attachAds(
+      root,
+      media,
+      { next: () => 'https://ads.example/one.mp4', everySeconds: 3600, fadeSeconds: 0 },
+      now,
+    );
+    const video = root.querySelector('.pux-ad__video') as HTMLVideoElement;
+    video.play = vi.fn(() => Promise.resolve());
+    await ads.play();
+    expect(video.muted).toBe(true);
+  });
+});
