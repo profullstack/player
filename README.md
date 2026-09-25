@@ -161,6 +161,38 @@ Worth knowing:
   length; `0` cuts straight. The listener's own level is always restored, even
   when an advert fails.
 
+### Who sees them
+
+The decision is the same everywhere, so it lives here rather than being made
+differently in each player. It follows OpenAccess, which already models it:
+
+```js
+import { adsUnlessEntitled } from '@profullstack/player';
+
+const ads = await adsUnlessEntitled({
+  product: 'nixamp.pro',
+  entitlements: () => openaccess.entitlements(),  // your transport, not ours
+  ads: { next: getAd, everySeconds: 300 },
+});
+
+createPlayer(root, { src, ads });   // null when they have paid
+```
+
+`active` and `trialing` count as paid; `past_due` does not, because that is a
+card that failed rather than somebody who stopped paying, and interrupting them
+is how a recoverable billing problem becomes a cancellation. The period is
+checked as well as the status: a row can sit at `active` past what was paid for
+when a webhook never arrived.
+
+**An unreachable entitlement source means adverts, not silence.** The
+alternative is an outage in the auth hub quietly switching off every advert
+across the fleet, and a paying viewer who sees one break has lost less than a
+business that stopped earning without noticing.
+
+Transport-free on purpose: the host fetches its own entitlements and this only
+decides what they mean, so embedding the player never drags in an auth
+dependency.
+
 ### Audio adverts
 
 A music player wants an MP3, not a video laid over the artwork. Return one and
