@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>picture-in-picture ad break check</title>
+    <style>
+      body { margin: 0; background: #111; color: #eee; font: 14px system-ui; }
+      #stage { width: 640px; height: 360px; }
+      video { width: 100%; height: 100%; }
+      #log { padding: 1rem; white-space: pre; line-height: 1.5; }
+      button { margin: 0.75rem; padding: 0.5rem 0.9rem; font: inherit; }
+    </style>
+  </head>
+  <body>
+    <!--
+      Picture-in-picture cannot be tested in jsdom, and headless browsers do not
+      open the window either, so this is the check a person runs: press the
+      button, watch the corner. The break must appear IN the window, and the
+      programme must be back in it afterwards.
+
+          pnpm build && python3 -m http.server 8731
+          open http://localhost:8731/harness/pip-check.html?src=<programme>&ad=<advert>
+
+      Any two playable URLs will do; ffmpeg makes a pair in seconds:
+          ffmpeg -f lavfi -i testsrc=size=640x360:rate=15:duration=40 \
+                 -f lavfi -i sine=frequency=220:duration=40 \
+                 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest prog.mp4
+          ffmpeg -f lavfi -i color=c=red:size=640x360:rate=15:duration=5 \
+                 -f lavfi -i sine=frequency=880:duration=5 \
+                 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest ad.mp4
+    -->
+    <div id="stage"><video id="prog" playsinline></video></div>
+    <button id="go">play, then pop out</button>
+    <div id="log"></div>
+    <script type="module">
+      import { attachAds } from '../dist/index.js';
+
+      const params = new URLSearchParams(location.search);
+      const src = params.get('src') ?? '/media/prog.mp4';
+      const advert = params.get('ad') ?? '/media/ad.mp4';
+      const every = Number(params.get('every')) || 5;
+
+      const stage = document.getElementById('stage');
+      const prog = document.getElementById('prog');
+      prog.src = src;
+
+      const lines = [];
+      const holder = () => {
+        const el = document.pictureInPictureElement;
+        return el ? el.id || el.className : 'nothing';
+      };
+      const say = (message) => {
+        lines.push(`${(performance.now() / 1000).toFixed(1)}s  ${message}`);
+        document.getElementById('log').textContent = lines.join('\n');
+      };
+      window.__log = lines;
+      window.__holder = holder;
+
+      attachAds(stage, prog, {
+        next: () => advert,
+        everySeconds: every,
+        fadeSeconds: 0,
+        revealStage: false,
+        onBreakStart: () => say(`break start   window: ${holder()}`),
+        onBreakEnd: () => say(`break end     window: ${holder()}`),
+        onError: (error) => say(`error: ${error?.message ?? error}`),
+      });
+
+      // The only press in the whole run. Everything after it — the break, the
+      // swap into the advert and the swap back — happens on a timer, with no
+      // transient activation left, which is the case that has to work.
+      document.getElementById('go').addEventListener('click', async () => {
+        await prog.play();
+        await prog.requestPictureInPicture();
+        say(`popped out    window: ${holder()}`);
+      });
+
+      let last = null;
+      setInterval(() => {
+        const now = holder();
+        if (now === last) return;
+        last = now;
+        say(`window now: ${now}`);
+      }, 250);
+    </script>
+  </body>
+</html>
