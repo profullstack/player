@@ -1,5 +1,12 @@
 import { describe, it, expect } from 'vitest';
-import { MAX_CHANNELS, createM3uParser, entryKind, parseM3u, parseM3uStream } from '../src/m3u';
+import {
+  MAX_CHANNELS,
+  createM3uParser,
+  entryKind,
+  parseM3u,
+  parseM3uList,
+  parseM3uStream,
+} from '../src/m3u';
 
 /**
  * The parsing cases are ported knowledge, not invented coverage: each one is a
@@ -29,8 +36,37 @@ describe('parseM3u', () => {
         group: 'UK | Entertainment',
         url: 'http://example.test/live/u/p/1.ts',
         kind: 'live',
+        tvgId: 'bbc1',
       },
     ]);
+  });
+
+  it('adds nothing for attributes a line does not carry', () => {
+    const [ch] = parseM3u('#EXTINF:-1,Plain\nhttp://example.test/live/1.ts');
+    expect(Object.keys(ch!)).toEqual(['title', 'group', 'url', 'kind']);
+  });
+
+  it('reads the guide attributes a TV guide needs', () => {
+    const [ch] = parseM3u(
+      [
+        '#EXTINF:-1 tvg-id="cnn.us" tvg-logo="https://l.test/cnn.png" tvg-chno="202" catchup="xc" catchup-days="3" catchup-source="?utc={utc}",CNN',
+        'http://example.test/live/u/p/2.ts',
+      ].join('\n')
+    );
+    expect(ch).toMatchObject({
+      tvgId: 'cnn.us',
+      logo: 'https://l.test/cnn.png',
+      chno: 202,
+      catchup: { type: 'xc', days: 3, source: '?utc={utc}' },
+    });
+  });
+
+  it('reads tvg-rec as days of archive and ignores a non-numeric channel number', () => {
+    const [ch] = parseM3u(
+      ['#EXTINF:-1 tvg-rec="7" tvg-chno="abc",X', 'http://example.test/live/3.ts'].join('\n')
+    );
+    expect(ch!.catchup).toEqual({ type: 'default', days: 7 });
+    expect(ch!.chno).toBeUndefined();
   });
 
   it('does not let a comma inside an attribute eat the title', () => {
@@ -356,4 +392,23 @@ describe('createM3uParser', () => {
       expect(p.full).toBe(false);
     }
   );
+});
+
+describe('the guide URL on the #EXTM3U line', () => {
+  it('is read from url-tvg or x-tvg-url, first of several', () => {
+    expect(
+      parseM3uList('#EXTM3U url-tvg="https://g.test/a.xml, https://g.test/b.xml"\n').epgUrl
+    ).toBe('https://g.test/a.xml');
+    expect(parseM3uList('#EXTM3U x-tvg-url="https://g.test/x.xml.gz"').epgUrl).toBe(
+      'https://g.test/x.xml.gz'
+    );
+    expect(parseM3uList(LIST).epgUrl).toBeNull();
+  });
+
+  it('comes back from the streaming parse too', async () => {
+    const text = '#EXTM3U url-tvg="https://g.test/e.xml"\n' + LIST.split('\n').slice(1).join('\n');
+    const res = await parseM3uStream(inChunks(text, 7));
+    expect(res.epgUrl).toBe('https://g.test/e.xml');
+    expect(res.kept).toBe(1);
+  });
 });

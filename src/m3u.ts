@@ -42,6 +42,44 @@ export interface M3uEntry {
   group: string | null;
   url: string;
   kind: EntryKind;
+  /**
+   * The keys below are present only when the #EXTINF line carried them, so an
+   * entry from a bare list is exactly the four fields above.
+   */
+  /** `tvg-id`: what an XMLTV guide files this channel's programmes under. */
+  tvgId?: string;
+  /** `tvg-logo`. */
+  logo?: string;
+  /** `tvg-chno`, when it is a number. */
+  chno?: number;
+  /** Archive playback, from `catchup`/`catchup-days`/`catchup-source` or the older `tvg-rec`. */
+  catchup?: M3uCatchup;
+}
+
+export interface M3uCatchup {
+  /** `default`, `append`, `shift`, `flussonic`, `xc`... as the provider wrote it. */
+  type: string;
+  days?: number;
+  source?: string;
+}
+
+/** The optional per-entry fields, read from an attribute block. */
+function extrasOf(attrs: Record<string, string>): Partial<M3uEntry> {
+  const out: Partial<M3uEntry> = {};
+  if (attrs['tvg-id']) out.tvgId = attrs['tvg-id'];
+  if (attrs['tvg-logo']) out.logo = attrs['tvg-logo'];
+  const chno = Number(attrs['tvg-chno']);
+  if (attrs['tvg-chno'] && Number.isFinite(chno)) out.chno = chno;
+  // `tvg-rec="7"` is the older spelling of seven days of archive.
+  const type = attrs['catchup'] || (Number(attrs['tvg-rec']) > 0 ? 'default' : '');
+  if (type) {
+    const catchup: M3uCatchup = { type };
+    const days = Number(attrs['catchup-days'] || attrs['tvg-rec']);
+    if (days > 0) catchup.days = days;
+    if (attrs['catchup-source']) catchup.source = attrs['catchup-source'];
+    out.catchup = catchup;
+  }
+  return out;
 }
 
 export interface ParseOptions {
@@ -131,6 +169,8 @@ export interface M3uParser {
   readonly kept: number;
   /** True once `max` entries have been kept. False when `max` is unlimited. */
   readonly full: boolean;
+  /** The guide URL from the `#EXTM3U` line (`url-tvg` or `x-tvg-url`), once seen. */
+  readonly epgUrl: string | null;
 }
 
 /**
@@ -166,7 +206,8 @@ export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uP
   /** `#EXTGRP:` is the other way providers state a group; it applies until changed. */
   let currentGroup: string | null = null;
   /** The #EXTINF we are holding while we look for the URL that belongs to it. */
-  let pending: { name: string; attrGroup: string | null } | null = null;
+  let pending: { name: string; attrGroup: string | null; extras: Partial<M3uEntry> } | null = null;
+  let epgUrl: string | null = null;
 
   const parser: M3uParser = {
     get entries() {
@@ -182,6 +223,9 @@ export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uP
     },
     get full() {
       return kept >= ceiling;
+    },
+    get epgUrl() {
+      return epgUrl;
     },
     push(raw: string): boolean {
       if (kept >= ceiling) return false;
@@ -200,6 +244,14 @@ export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uP
         return true;
       }
 
+      if (!pending && line.startsWith('#EXTM3U')) {
+        const a = parseAttrs(line);
+        // Some lists name several guides, comma-separated; the first is kept.
+        const named = (a['url-tvg'] || a['x-tvg-url'] || '').split(',')[0]?.trim();
+        if (named) epgUrl = named;
+        return true;
+      }
+
       if (pending) {
         // Blank lines and any other directive sit between an #EXTINF and its URL
         // on real lists -- #EXTVLCOPT especially. A second #EXTINF lands here too
@@ -207,7 +259,7 @@ export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uP
         if (!line || line.startsWith('#')) return true;
 
         const url = line;
-        const { name, attrGroup } = pending;
+        const { name, attrGroup, extras } = pending;
         pending = null;
         // A relative or non-http URL is not something either site can seal, proxy
         // or hand to a player, so it is dropped along with its #EXTINF.
@@ -215,7 +267,7 @@ export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uP
         if (!name) return true;
 
         const group = attrGroup || currentGroup || null;
-        entries.push({ title: name, group, url, kind: entryKind({ url, group }) });
+        entries.push({ title: name, group, url, kind: entryKind({ url, group }), ...extras });
         kept += 1;
         return true;
       }
@@ -234,7 +286,7 @@ export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uP
       const name = line.slice(comma + 1).trim() || attrs['tvg-name'] || '';
       // Held even when the name is empty, so the URL line that follows is
       // consumed as this entry's rather than mistaken for the next one's.
-      pending = { name, attrGroup: attrs['group-title'] || null };
+      pending = { name, attrGroup: attrs['group-title'] || null, extras: extrasOf(attrs) };
       return true;
     },
   };
@@ -251,11 +303,19 @@ export function createM3uParser({ max = MAX_CHANNELS }: ParseOptions = {}): M3uP
  * and on a real catalogue that is the problem rather than the parsing.
  */
 export function parseM3u(text: string, opts: ParseOptions = {}): M3uEntry[] {
+  return parseM3uList(text, opts).entries;
+}
+
+/** {@link parseM3u}, plus the guide URL the list names on its `#EXTM3U` line. */
+export function parseM3uList(
+  text: string,
+  opts: ParseOptions = {}
+): { entries: M3uEntry[]; epgUrl: string | null } {
   const parser = createM3uParser(opts);
   for (const line of String(text ?? '').split(/\r?\n/)) {
     if (!parser.push(line)) break;
   }
-  return parser.entries;
+  return { entries: parser.entries, epgUrl: parser.epgUrl };
 }
 
 export interface StreamOptions extends ParseOptions {
@@ -298,6 +358,8 @@ export interface StreamResult {
   bytes: number;
   /** True if `max` was reached and later entries were dropped. Never with no ceiling. */
   truncated: boolean;
+  /** The guide URL named on the `#EXTM3U` line, or null. */
+  epgUrl: string | null;
 }
 
 /**
@@ -369,5 +431,11 @@ export async function parseM3uStream(
   // ordinary shape of a file with no trailing newline.
   if (onEntries) await onEntries(parser.drain());
 
-  return { entries: parser.entries, kept: parser.kept, bytes, truncated: truncated || parser.full };
+  return {
+    entries: parser.entries,
+    kept: parser.kept,
+    bytes,
+    truncated: truncated || parser.full,
+    epgUrl: parser.epgUrl,
+  };
 }

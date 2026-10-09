@@ -68,6 +68,7 @@ So hls.js runs wherever Media Source exists (Chrome, Firefox, Edge, Android, des
 
 - **Keyboard**: space/k, ← →, j/l, ↑ ↓, m, f, p, 0–9, Home/End, `<` `>`.
 - **Televisions**: Fire TV, Android TV, Tizen, webOS, Roku and the rest are detected from one list, kept identical to the one genrewatch and tipoffwatch already use so a device is a TV in all of them or none. Controls grow, the auto-hide slows, the seek step doubles, and what a D-pad cannot use is dropped.
+- **Reads a TV guide's attributes from an M3U.** `@profullstack/player/m3u` keeps `tvg-id`, `tvg-logo`, `tvg-chno` and catch-up on each entry when the line carries them, and `parseM3uList` / `parseM3uStream` return the `url-tvg` guide URL.
 - **Remembers** volume, mute and speed across sources, and a position per `mediaId` (60 of them, least-recently-touched evicted). Every storage access is guarded — some browsers throw on merely touching `localStorage`.
 - **Explains failures.** A blocked media load is a console-only event; the element's error code is the only in-page evidence. A CSP-refused load, a dropped connection and an undecodable codec each get their own sentence.
 
