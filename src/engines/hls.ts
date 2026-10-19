@@ -44,6 +44,15 @@ export async function createHlsEngine(context: EngineContext): Promise<EngineHan
           backBufferLength: 90,
         }),
     enableWorker: true,
+    ...(context.headers && Object.keys(context.headers).length > 0
+      ? {
+          xhrSetup: (xhr: XMLHttpRequest) => {
+            for (const [name, value] of Object.entries(context.headers ?? {})) {
+              xhr.setRequestHeader(name, value);
+            }
+          },
+        }
+      : {}),
   });
 
   let recoveries = 0;

@@ -35,6 +35,12 @@ export interface EngineContext {
    * for themselves (HLS reads it from the playlist) override it.
    */
   live: boolean;
+  /**
+   * Sent on every playlist, segment and stream request the engine makes, e.g.
+   * `Authorization: Bearer ...`. A native element cannot send headers at all,
+   * so a progressive source that needs one must carry it in the URL instead.
+   */
+  headers?: Readonly<Record<string, string>>;
   /** Terminal: playback has stopped and the reader is being told why. */
   onError: (message: string) => void;
   /** Not terminal. Null clears whatever was showing. */

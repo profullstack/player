@@ -53,6 +53,27 @@ describe('attachSource', () => {
     expect(attached.levels()).toHaveLength(1);
   });
 
+  it('hands request headers to the engine', async () => {
+    const engine = spyEngine();
+    await attachSource(document.createElement('video'), {
+      src: 'https://x.test/live.m3u8',
+      capabilities: CHROME,
+      headers: { Authorization: 'Bearer t0k' },
+      engines: { hls: engine.factory },
+    });
+    expect(engine.seen()?.headers).toEqual({ Authorization: 'Bearer t0k' });
+  });
+
+  it('passes no headers when none are given', async () => {
+    const engine = spyEngine();
+    await attachSource(document.createElement('video'), {
+      src: 'https://x.test/live.m3u8',
+      capabilities: CHROME,
+      engines: { hls: engine.factory },
+    });
+    expect(engine.seen()?.headers).toBeUndefined();
+  });
+
   it('falls back to native HLS on iOS', async () => {
     const engine = spyEngine();
     const attached = await attachSource(document.createElement('video'), {

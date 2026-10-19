@@ -89,6 +89,8 @@ export interface PlayerOptions {
   unplayableAdvice?: string;
   /** Send cookies with stream requests; IPTV proxies authenticate that way. */
   withCredentials?: boolean;
+  /** Request headers for HLS and transport streams, e.g. `Authorization: Bearer ...`. */
+  headers?: Readonly<Record<string, string>>;
   /** Replace or inject an engine. Mostly for tests. */
   engines?: Partial<Record<EngineName, EngineFactory>>;
   /**
@@ -907,6 +909,7 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
         isTv,
         capabilities: caps,
         withCredentials: options.withCredentials ?? false,
+        ...(options.headers ? { headers: options.headers } : {}),
         unplayableAdvice: options.unplayableAdvice ?? '',
         ...(options.engines ? { engines: options.engines } : {}),
         onError: (message: string) => {
