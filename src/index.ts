@@ -60,6 +60,7 @@ export {
   type SavedPosition,
 } from './core/storage';
 export { codecName, mseCandidates, unplayableReason } from './engines/codecs';
+export type { StreamFailure, StreamFailureDecision } from './engines/mpegts';
 export type {
   EngineContext,
   EngineFactory,

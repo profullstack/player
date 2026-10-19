@@ -33,6 +33,7 @@ import {
   type SourceKind,
 } from './source';
 import type { EngineFactory, EngineHandle, EngineInfo, QualityLevel } from '../engines/types';
+import type { StreamFailure, StreamFailureDecision } from '../engines/mpegts';
 
 export interface AttachOptions {
   src: string;
@@ -47,6 +48,14 @@ export interface AttachOptions {
   headers?: Readonly<Record<string, string>>;
   /** Appended to a codec failure, e.g. "VLC can — the button is beside Play." */
   unplayableAdvice?: string;
+  /** What a codec failure calls the source ("That channel uses..."). Transport streams only. */
+  unplayableSubject?: string;
+  /**
+   * Transport streams only: decide what a failure means, from mpegts.js's
+   * category and the HTTP status. Return nothing for the default (rebuild,
+   * then report). See `StreamFailureDecision`.
+   */
+  onStreamError?: (failure: StreamFailure) => StreamFailureDecision | null | undefined;
   /** Terminal: playback has stopped, and this is what to tell the reader. */
   onError?: (message: string) => void;
   /** Not terminal. Null clears whatever was showing. */
@@ -122,6 +131,8 @@ export async function attachSource(
     handle = await createMpegtsEngine(context, {
       withCredentials: options.withCredentials ?? false,
       unplayableAdvice: options.unplayableAdvice ?? '',
+      ...(options.unplayableSubject ? { unplayableSubject: options.unplayableSubject } : {}),
+      ...(options.onStreamError ? { onStreamError: options.onStreamError } : {}),
     });
   } else {
     const { createNativeEngine } = await import('../engines/native');
