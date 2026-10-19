@@ -43,6 +43,8 @@ export interface AttachOptions {
   /** True on a television, which wants a very different buffering profile. */
   isTv?: boolean;
   withCredentials?: boolean;
+  /** Request headers for the HLS and transport stream engines, e.g. a bearer token. */
+  headers?: Readonly<Record<string, string>>;
   /** Appended to a codec failure, e.g. "VLC can — the button is beside Play." */
   unplayableAdvice?: string;
   /** Terminal: playback has stopped, and this is what to tell the reader. */
@@ -93,6 +95,7 @@ export async function attachSource(
     live: options.live ?? choice.kind === 'mpegts',
     onError: options.onError ?? noop,
     onNotice: options.onNotice ?? noop,
+    ...(options.headers ? { headers: options.headers } : {}),
     ...(options.onReady ? { onReady: options.onReady } : {}),
   };
 

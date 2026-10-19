@@ -271,7 +271,9 @@ export async function createMpegtsEngine(
         url: src,
         withCredentials: options.withCredentials ?? false,
       },
-      config
+      context.headers && Object.keys(context.headers).length > 0
+        ? { ...config, headers: { ...context.headers } }
+        : config
     );
 
     player.on(mpegts.Events.MEDIA_INFO ?? 'media_info', (...args: unknown[]) => {
