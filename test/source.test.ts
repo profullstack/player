@@ -116,3 +116,23 @@ describe('capabilitiesOf', () => {
     });
   });
 });
+
+describe('ManagedMediaSource', () => {
+  const IPHONE_17: Capabilities = { mediaSource: false, nativeHls: true, managedMediaSource: true };
+
+  it('lets a transport stream play where only ManagedMediaSource exists', () => {
+    expect(chooseEngine({ src: '/live/7.ts' }, IPHONE_17)).toEqual({
+      engine: 'mpegts',
+      kind: 'mpegts',
+    });
+  });
+
+  it('leaves HLS on the native path there', () => {
+    expect(chooseEngine({ src: '/live.m3u8' }, IPHONE_17).engine).toBe('native');
+  });
+
+  it('is detected', () => {
+    expect(capabilitiesOf({ ManagedMediaSource: class {} }, null).managedMediaSource).toBe(true);
+    expect(capabilitiesOf({}, null).managedMediaSource).toBeUndefined();
+  });
+});

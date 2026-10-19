@@ -125,3 +125,132 @@ describe('the restart budget', () => {
     expect(context.onNotice).toHaveBeenCalledTimes(0);
   });
 });
+
+/**
+ * The host's say over a failure.
+ *
+ * An IPTV proxy refuses in HTTP statuses, and some of them mean "stop": a
+ * shared line somebody else is watching, a channel that is gone. Rebuilding on
+ * those is three more connections on a line that counts them. The engine keeps
+ * the ladder; the host names what each status means.
+ */
+describe('onStreamError', () => {
+  let media: HTMLVideoElement;
+  let onError: ReturnType<typeof vi.fn>;
+  let context: EngineContext;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    created.length = 0;
+    media = document.createElement('video');
+    onError = vi.fn();
+    context = {
+      media,
+      src: 'https://example.test/stream.ts',
+      isTv: false,
+      live: true,
+      onError,
+      onNotice: vi.fn(),
+    };
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('is handed the category, the detail and the HTTP status', async () => {
+    const seen: unknown[] = [];
+    await createMpegtsEngine(context, {
+      onStreamError: (failure) => {
+        seen.push(failure);
+        return undefined;
+      },
+    });
+    created.at(-1)?.handlers.error?.('NetworkError', 'HttpStatusCodeInvalid', { code: 409 });
+    created.at(-1)?.handlers.error?.('MediaError', 'MediaMSEError', undefined);
+    expect(seen).toEqual([
+      { type: 'NetworkError', detail: 'HttpStatusCodeInvalid', code: 409 },
+      { type: 'MediaError', detail: 'MediaMSEError' },
+    ]);
+  });
+
+  it('stop ends it at once, in the host’s words, with no rebuild', async () => {
+    await createMpegtsEngine(context, {
+      onStreamError: (f) =>
+        f.code === 409 ? { action: 'stop', message: 'Somebody else is watching.' } : undefined,
+    });
+    created.at(-1)?.handlers.error?.('NetworkError', 'HttpStatusCodeInvalid', { code: 409 });
+    await vi.runOnlyPendingTimersAsync();
+    expect(onError).toHaveBeenCalledWith('Somebody else is watching.');
+    expect(created).toHaveLength(1);
+    expect(created[0]?.destroy).toHaveBeenCalled();
+  });
+
+  it('retry rebuilds, starting the ladder where the host says', async () => {
+    await createMpegtsEngine(context, {
+      onStreamError: () => ({ action: 'retry', message: 'The line stayed busy.', delayMs: 6000 }),
+    });
+    created.at(-1)?.handlers.error?.('NetworkError', 'HttpStatusCodeInvalid', { code: 503 });
+    await vi.advanceTimersByTimeAsync(5999);
+    expect(created).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(created).toHaveLength(2);
+  });
+
+  it('a spent retry budget reports the host’s message', async () => {
+    await createMpegtsEngine(context, {
+      onStreamError: () => ({ action: 'retry', message: 'The line stayed busy.' }),
+    });
+    for (let i = 0; i < 6; i += 1) {
+      created.at(-1)?.handlers.error?.('NetworkError', 'x', { code: 503 });
+      await vi.runOnlyPendingTimersAsync();
+    }
+    expect(onError).toHaveBeenCalledWith('The line stayed busy.');
+  });
+
+  it('a frozen clock is offered to the host as a stall', async () => {
+    const seen: string[] = [];
+    Object.defineProperty(media, 'paused', { configurable: true, get: () => false });
+    await createMpegtsEngine(context, {
+      onStreamError: (f) => {
+        seen.push(f.type);
+        return { action: 'retry', message: 'It stopped. Press Play again.' };
+      },
+    });
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(seen).toEqual(['stall']);
+    expect(context.onNotice).toHaveBeenCalledWith('Reconnecting… (1/5)');
+  });
+
+  it('a rebuild resumes a stream that was playing', async () => {
+    Object.defineProperty(media, 'paused', { configurable: true, get: () => false });
+    const play = vi.fn(() => Promise.resolve());
+    media.play = play;
+    await createMpegtsEngine(context, {});
+    expect(play).not.toHaveBeenCalled();
+    created.at(-1)?.handlers.error?.('NetworkError', 'x');
+    await vi.runOnlyPendingTimersAsync();
+    expect(play).toHaveBeenCalledTimes(1);
+  });
+
+  it('a rebuild leaves a paused reader paused', async () => {
+    const play = vi.fn(() => Promise.resolve());
+    media.play = play;
+    await createMpegtsEngine(context, {});
+    created.at(-1)?.handlers.error?.('NetworkError', 'x');
+    await vi.runOnlyPendingTimersAsync();
+    expect(created).toHaveLength(2);
+    expect(play).not.toHaveBeenCalled();
+  });
+
+  it('a host classifier that throws falls back to the default', async () => {
+    await createMpegtsEngine(context, {
+      onStreamError: () => {
+        throw new Error('boom');
+      },
+    });
+    created.at(-1)?.handlers.error?.('NetworkError', 'x');
+    await vi.runOnlyPendingTimersAsync();
+    expect(created).toHaveLength(2);
+  });
+});

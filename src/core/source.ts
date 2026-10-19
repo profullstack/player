@@ -35,6 +35,11 @@ export interface Capabilities {
    * Chrome says `"maybe"` and means nothing by it. See chooseEngine.
    */
   nativeHls: boolean;
+  /**
+   * `ManagedMediaSource` exists (iOS 17.1+, Safari 17+). mpegts.js can push
+   * into it; the HLS ladder ignores it and keeps the native path on iOS.
+   */
+  managedMediaSource?: boolean;
 }
 
 const EXTENSIONS: readonly (readonly [RegExp, SourceKind])[] = [
@@ -87,10 +92,14 @@ function pathOf(src: string): string {
 }
 
 export function capabilitiesOf(
-  win: { MediaSource?: unknown } = globalThis as { MediaSource?: unknown },
+  win: { MediaSource?: unknown; ManagedMediaSource?: unknown } = globalThis as {
+    MediaSource?: unknown;
+    ManagedMediaSource?: unknown;
+  },
   probe: HTMLMediaElement | null = null
 ): Capabilities {
   const mediaSource = typeof win.MediaSource !== 'undefined';
+  const managedMediaSource = typeof win.ManagedMediaSource !== 'undefined';
   let nativeHls = false;
   try {
     const element =
@@ -102,7 +111,9 @@ export function capabilitiesOf(
   } catch {
     nativeHls = false;
   }
-  return { mediaSource, nativeHls };
+  return managedMediaSource
+    ? { mediaSource, nativeHls, managedMediaSource }
+    : { mediaSource, nativeHls };
 }
 
 export interface EngineChoice {
@@ -144,7 +155,10 @@ export function chooseEngine(input: SourceInput, caps: Capabilities): EngineChoi
 
     case 'mpegts':
       // No browser decodes a transport stream, and none is going to start.
-      if (!caps.mediaSource) {
+      // mpegts.js pushes into either kind of Media Source, so an iPhone on iOS
+      // 17.1+ (ManagedMediaSource, no MediaSource) can play one. HLS keeps its
+      // native path there, which is why this is not folded into `mediaSource`.
+      if (!caps.mediaSource && !caps.managedMediaSource) {
         return {
           engine: 'mpegts',
           kind,

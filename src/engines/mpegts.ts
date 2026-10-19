@@ -41,11 +41,48 @@ const RESTART_BASE_MS = 2000;
 const STALL_CHECK_MS = 5000;
 const STALL_LIMIT = 3;
 
+/**
+ * One failure, as the host sees it.
+ *
+ * `type` is mpegts.js's error category (`NetworkError`, `MediaError`,
+ * `OtherError`), or `stall` when the media clock stopped moving with no error
+ * at all. `code` is the HTTP status when the loader got one: the only part of
+ * a proxy's refusal that survives, since the response body belongs to the
+ * library and reading it would mean a second request on a line that counts
+ * connections.
+ */
+export interface StreamFailure {
+  type: string;
+  detail: string;
+  code?: number;
+}
+
+/**
+ * What the host wants done about a failure.
+ *
+ * - `stop` ends playback now and reports `message`. For a status that is the
+ *   server having decided something (a shared line in use, a channel that is
+ *   gone): reconnecting to be told the same thing again is worse than useless,
+ *   and on an IPTV line it is the concurrency providers suspend accounts for.
+ * - `retry` rebuilds on the usual ladder and reports `message` only once the
+ *   budget is spent. `delayMs` starts the ladder further along, for a failure
+ *   whose cause needs time to clear, like a line the panel still counts as busy.
+ */
+export type StreamFailureDecision =
+  { action: 'stop'; message: string } | { action: 'retry'; message: string; delayMs?: number };
+
 export interface MpegtsOptions {
   /** Sent with the request; IPTV proxies authenticate by session cookie. */
   withCredentials?: boolean;
   /** Appended to a codec failure, e.g. "VLC can — the button is beside Play." */
   unplayableAdvice?: string;
+  /** What a codec failure calls the source: "That channel uses...". Default `stream`. */
+  unplayableSubject?: string;
+  /**
+   * Decide what a failure means. Return nothing for the default: rebuild, and
+   * say "This stream could not be played" once that stops working.
+   */
+  onStreamError?: (failure: StreamFailure) => StreamFailureDecision | null | undefined;
   /**
    * Demux on a worker thread. Only set this on a **webpack** host.
    *
@@ -189,6 +226,7 @@ export async function createMpegtsEngine(
   let stallTimer: ReturnType<typeof setInterval> | null = null;
   let lastTime = -1;
   let stalls = 0;
+  let resume = false;
 
   const clearTimers = (): void => {
     if (restartTimer) clearTimeout(restartTimer);
@@ -217,13 +255,17 @@ export async function createMpegtsEngine(
     context.onError(message);
   };
 
-  const restart = (finalMessage: string): void => {
+  const restart = (finalMessage: string, baseMs = RESTART_BASE_MS): void => {
     if (stopped) return;
     if (restarts >= MAX_RESTARTS) {
       giveUp(finalMessage);
       return;
     }
     restarts += 1;
+    // Read before the player goes: tearing it down unloads the element, and a
+    // rebuilt one sits paused unless somebody asks it to play. A reader who had
+    // paused is left paused.
+    resume = !media.paused;
     clearTimers();
     destroyPlayer();
     context.onNotice(`Reconnecting… (${String(restarts)}/${String(MAX_RESTARTS)})`);
@@ -232,8 +274,29 @@ export async function createMpegtsEngine(
         restartTimer = null;
         if (!stopped) start();
       },
-      RESTART_BASE_MS * 2 ** (restarts - 1)
+      baseMs * 2 ** (restarts - 1)
     );
+  };
+
+  /** Hand a failure to the host, then do what it said, or the default. */
+  const fail = (failure: StreamFailure, fallback: string): void => {
+    if (stopped) return;
+    let decision: StreamFailureDecision | null | undefined;
+    try {
+      decision = options.onStreamError?.(failure);
+    } catch {
+      // A host classifier that throws is no reason to strand the reader.
+      decision = undefined;
+    }
+    if (decision?.action === 'stop') {
+      giveUp(decision.message);
+      return;
+    }
+    if (decision?.action === 'retry') {
+      restart(decision.message, decision.delayMs ?? RESTART_BASE_MS);
+      return;
+    }
+    restart(fallback);
   };
 
   const watchForStalls = (): void => {
@@ -251,7 +314,7 @@ export async function createMpegtsEngine(
         stalls += 1;
         if (stalls >= STALL_LIMIT) {
           stalls = 0;
-          restart('The stream stopped sending.');
+          fail({ type: 'stall', detail: '' }, 'The stream stopped sending.');
         }
         return;
       }
@@ -285,7 +348,8 @@ export async function createMpegtsEngine(
             .MediaSource;
           return ms?.isTypeSupported?.(type) ?? false;
         },
-        options.unplayableAdvice ?? ''
+        options.unplayableAdvice ?? '',
+        options.unplayableSubject ?? 'stream'
       );
       // Terminal, and deliberately: a browser with no HEVC decoder will not grow
       // one on the second attempt, so there is nothing to reconnect for.
@@ -293,12 +357,23 @@ export async function createMpegtsEngine(
     });
 
     player.on(mpegts.Events.ERROR ?? 'error', (...args: unknown[]) => {
+      const type = String(args[0] ?? '');
       const detail = String(args[1] ?? '');
-      restart(`This stream could not be played (${detail}).`);
+      const info = args[2] as { code?: unknown } | undefined;
+      const code = typeof info?.code === 'number' ? info.code : undefined;
+      fail(
+        { type, detail, ...(code === undefined ? {} : { code }) },
+        `This stream could not be played (${detail}).`
+      );
     });
 
     player.attachMediaElement(media);
     player.load();
+    if (resume) {
+      resume = false;
+      // A rejection here is an autoplay policy, and the reader can press Play.
+      void media.play()?.catch(() => undefined);
+    }
     watchForStalls();
     context.onReady?.({ live: context.live, levels: [] });
   }

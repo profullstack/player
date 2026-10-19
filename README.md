@@ -101,11 +101,31 @@ No DOM is created, nothing is styled, and your UI is untouched. `createPlayer` u
 | `poster`, `autoplay`      | As you would expect.                                                                                     |
 | `media`                   | Drive an existing element instead of building one.                                                       |
 | `unplayableAdvice`        | Appended to a codec failure, e.g. `"VLC can — the button is beside Play."`                               |
+| `unplayableSubject`       | What a codec failure calls the source: `"That channel uses..."`. Default `stream`.                       |
+| `onStreamError`           | Transport streams: `(failure) => decision`. See below.                                                   |
 | `withCredentials`         | Send cookies with stream requests; IPTV proxies authenticate that way.                                   |
 | `headers`                 | Request headers for HLS and transport streams, e.g. a bearer token. A native source cannot send headers. |
 | `capabilities`, `engines` | Override detection or inject an engine. Mostly for tests.                                                |
 
 Every control carries a `data-control` name (`play`, `back`, `rate`, `quality`, …) — style or hide them without depending on the order buttons sit in.
+
+### Deciding what a transport stream failure means
+
+An IPTV proxy refuses in HTTP statuses, and some of them mean stop: a shared line somebody else is watching, a channel that has gone. Rebuilding on those is more connections on a line that counts them. `onStreamError` gets mpegts.js's category, its detail and the status, plus `type: 'stall'` when the clock froze with no error, and answers:
+
+```js
+attachSource(video, {
+  src,
+  kind: 'mpegts',
+  onStreamError: ({ type, code }) => {
+    if (code === 409) return { action: 'stop', message: 'Somebody else is watching that line.' };
+    if (code === 503) return { action: 'retry', message: 'The line stayed busy.', delayMs: 6000 };
+    return undefined; // the default: rebuild, then "This stream could not be played"
+  },
+});
+```
+
+`retry` keeps the usual ladder (five rebuilds, doubling, refilled on `playing`) and reports its message only when that is spent; `delayMs` starts the ladder further along. A rebuild resumes a stream that was playing and leaves a paused one paused.
 
 ## Development
 

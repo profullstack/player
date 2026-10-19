@@ -45,7 +45,7 @@ import {
   type SourceKind,
 } from './source';
 import type { EngineFactory, QualityLevel } from '../engines/types';
-import { attachSource, type AttachedSource } from './attach';
+import { attachSource, type AttachedSource, type AttachOptions } from './attach';
 import { attachAds, type AdBreakOptions } from './ads';
 
 export interface PlayerOptions {
@@ -87,6 +87,10 @@ export interface PlayerOptions {
   media?: HTMLMediaElement;
   /** Appended to a codec failure, e.g. "VLC can — the button is beside Play." */
   unplayableAdvice?: string;
+  /** What a codec failure calls the source ("That channel uses..."). */
+  unplayableSubject?: string;
+  /** Transport streams only: decide what a failure means. See `attachSource`. */
+  onStreamError?: AttachOptions['onStreamError'];
   /** Send cookies with stream requests; IPTV proxies authenticate that way. */
   withCredentials?: boolean;
   /** Request headers for HLS and transport streams, e.g. `Authorization: Bearer ...`. */
@@ -911,6 +915,8 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
         withCredentials: options.withCredentials ?? false,
         ...(options.headers ? { headers: options.headers } : {}),
         unplayableAdvice: options.unplayableAdvice ?? '',
+        ...(options.unplayableSubject ? { unplayableSubject: options.unplayableSubject } : {}),
+        ...(options.onStreamError ? { onStreamError: options.onStreamError } : {}),
         ...(options.engines ? { engines: options.engines } : {}),
         onError: (message: string) => {
           root.classList.add('pux-player--failed');
