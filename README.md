@@ -89,21 +89,21 @@ No DOM is created, nothing is styled, and your UI is untouched. `createPlayer` u
 
 ## Options
 
-| Option                    | Meaning                                                                    |
-| ------------------------- | -------------------------------------------------------------------------- |
-| `src`                     | Required.                                                                  |
-| `kind`, `mimeType`        | Skip or steer source detection.                                            |
-| `mediaId`                 | Resume key. Omit and nothing is stored.                                    |
-| `live`                    | Force live. Usually unnecessary.                                           |
-| `chapters`                | `{ start, title }[]`; marks on the bar and the current one named.          |
-| `startAt`                 | Seconds to begin at. Beats a saved position.                               |
-| `shareUrl`                | `(seconds) => string`. Omit to drop the copy-link button.                  |
-| `poster`, `autoplay`      | As you would expect.                                                       |
-| `media`                   | Drive an existing element instead of building one.                         |
-| `unplayableAdvice`        | Appended to a codec failure, e.g. `"VLC can — the button is beside Play."` |
-| `withCredentials`         | Send cookies with stream requests; IPTV proxies authenticate that way.     |
+| Option                    | Meaning                                                                                                  |
+| ------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `src`                     | Required.                                                                                                |
+| `kind`, `mimeType`        | Skip or steer source detection.                                                                          |
+| `mediaId`                 | Resume key. Omit and nothing is stored.                                                                  |
+| `live`                    | Force live. Usually unnecessary.                                                                         |
+| `chapters`                | `{ start, title }[]`; marks on the bar and the current one named.                                        |
+| `startAt`                 | Seconds to begin at. Beats a saved position.                                                             |
+| `shareUrl`                | `(seconds) => string`. Omit to drop the copy-link button.                                                |
+| `poster`, `autoplay`      | As you would expect.                                                                                     |
+| `media`                   | Drive an existing element instead of building one.                                                       |
+| `unplayableAdvice`        | Appended to a codec failure, e.g. `"VLC can — the button is beside Play."`                               |
+| `withCredentials`         | Send cookies with stream requests; IPTV proxies authenticate that way.                                   |
 | `headers`                 | Request headers for HLS and transport streams, e.g. a bearer token. A native source cannot send headers. |
-| `capabilities`, `engines` | Override detection or inject an engine. Mostly for tests.                  |
+| `capabilities`, `engines` | Override detection or inject an engine. Mostly for tests.                                                |
 
 Every control carries a `data-control` name (`play`, `back`, `rate`, `quality`, …) — style or hide them without depending on the order buttons sit in.
 
