@@ -116,6 +116,11 @@ export interface PlayerOptions {
 export interface PlayerHandle {
   destroy: () => void;
   setChapters: (chapters: readonly Chapter[]) => void;
+  /**
+   * Enters or leaves full screen, exactly as the bar's button does. Call it from
+   * a click or key handler: browsers only grant full screen inside a gesture.
+   */
+  toggleFullscreen: () => Promise<void>;
   /** The element being driven, for a caller that needs it. */
   readonly media: HTMLMediaElement;
 }
@@ -149,6 +154,16 @@ const ICONS = {
 
 interface FullscreenVideo extends HTMLVideoElement {
   webkitEnterFullscreen?: () => void;
+}
+
+/** Safari before 16.4 and iPadOS only speak the prefixed fullscreen API. */
+interface WebkitFullscreenElement extends HTMLElement {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+}
+interface WebkitFullscreenDocument extends Document {
+  webkitFullscreenElement?: Element | null;
+  webkitFullscreenEnabled?: boolean;
+  webkitExitFullscreen?: () => Promise<void> | void;
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(
@@ -234,11 +249,15 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
     },
     caps
   );
+  // A <video> the host handed over is a picture whatever its URL looks like:
+  // only an explicit `audio: true` turns its stage, and its fullscreen button, off.
   const audioOnly =
     options.audio ??
-    (typeof HTMLAudioElement !== 'undefined' && options.media instanceof HTMLAudioElement
-      ? true
-      : isAudioKind(choice.kind));
+    (typeof HTMLVideoElement !== 'undefined' && options.media instanceof HTMLVideoElement
+      ? false
+      : typeof HTMLAudioElement !== 'undefined' && options.media instanceof HTMLAudioElement
+        ? true
+        : isAudioKind(choice.kind));
   // A transport stream has no end and no seekable range; HLS tells us later,
   // from the playlist, and flips this if it turns out to be a live edge.
   let live = options.live ?? choice.kind === 'mpegts';
@@ -513,7 +532,10 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
     overlay.setAttribute('aria-label', label);
     root.classList.toggle('pux-player--playing', isPlaying);
     root.classList.toggle('pux-player--ended', ended);
-    if (!isPlaying) showControls(false);
+    // Paused: the bar stays until play. Playing: the bar is shown and the hide
+    // timer armed, whatever started playback -- autoplay, a host's own play
+    // button, `.play()`, a tap. Waiting for a pointermove left it pinned forever.
+    showControls(isPlaying);
   }
 
   function renderVolume(): void {
@@ -599,19 +621,55 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
     showControls();
   }
 
+  const fsDoc = document as WebkitFullscreenDocument;
+
+  function fullscreenElement(): Element | null {
+    return document.fullscreenElement ?? fsDoc.webkitFullscreenElement ?? null;
+  }
+
   async function toggleFullscreen(): Promise<void> {
+    if (audioOnly) return;
     try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
+      if (fullscreenElement()) {
+        if (typeof document.exitFullscreen === 'function') await document.exitFullscreen();
+        else await fsDoc.webkitExitFullscreen?.();
         return;
       }
-      await root.requestFullscreen();
     } catch {
-      // iPhone Safari has no element fullscreen -- `requestFullscreen` is not
-      // there to call -- but the video element has one of its own. Every other
-      // browser's refusal lands here too, and none is worth an error message.
-      (media as FullscreenVideo).webkitEnterFullscreen?.();
+      return;
     }
+
+    // `false` (not merely absent) is the browser saying no: an iframe without
+    // `allowfullscreen`, or a policy. Asking anyway just rejects.
+    const enabled = document.fullscreenEnabled ?? fsDoc.webkitFullscreenEnabled;
+    if (enabled !== false) {
+      const target = root as WebkitFullscreenElement;
+      try {
+        if (typeof target.requestFullscreen === 'function') {
+          await target.requestFullscreen();
+          return;
+        }
+        if (typeof target.webkitRequestFullscreen === 'function') {
+          await target.webkitRequestFullscreen();
+          return;
+        }
+      } catch {
+        // Refused: fall through to the video's own fullscreen.
+      }
+    }
+
+    // iPhone Safari has no element fullscreen at all, but the video element has
+    // one of its own; it is also the way out of an iframe that forbids ours.
+    const video = media as FullscreenVideo;
+    if (typeof video.webkitEnterFullscreen === 'function') {
+      try {
+        video.webkitEnterFullscreen();
+        return;
+      } catch {
+        // Not ready (no metadata yet) or refused; say so below.
+      }
+    }
+    showNotice('Full screen is not available here.');
   }
 
   async function togglePip(): Promise<void> {
@@ -734,11 +792,19 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
   on(pipButton, 'click', () => void togglePip());
   on(fullscreenButton, 'click', () => void toggleFullscreen());
 
-  on(document, 'fullscreenchange', () => {
-    const isFull = document.fullscreenElement === root;
+  const renderFullscreen = (): void => {
+    const isFull = fullscreenElement() === root;
     root.classList.toggle('pux-player--fullscreen', isFull);
     fullscreenButton.innerHTML = isFull ? ICONS.exitFullscreen : ICONS.enterFullscreen;
     fullscreenButton.setAttribute('aria-label', isFull ? 'Exit fullscreen' : 'Fullscreen');
+  };
+  on(document, 'fullscreenchange', renderFullscreen);
+  on(document, 'webkitfullscreenchange', renderFullscreen);
+  // Double-clicking the picture is how everybody expects to go full screen. The
+  // two clicks inside it toggle play twice, which leaves playback where it was.
+  on(overlay, 'dblclick', (event) => {
+    event.preventDefault();
+    void toggleFullscreen();
   });
 
   on(scrub, 'pointerdown', (event) => {
@@ -767,6 +833,11 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
   on(scrub, 'pointercancel', endScrub);
 
   on(root, 'pointermove', () => {
+    showControls();
+  });
+  // A touch screen has no hover: a tap is the only way to call the bar back,
+  // and it must re-arm the timer like a mouse move does.
+  on(root, 'pointerdown', () => {
     showControls();
   });
   on(root, 'pointerleave', () => {
@@ -984,6 +1055,7 @@ export function createPlayer(root: HTMLElement, options: PlayerOptions): PlayerH
         'pux-player--fullscreen'
       );
     },
+    toggleFullscreen,
     setChapters(next: readonly Chapter[]): void {
       chapterSource = next;
       rebuildChapters();

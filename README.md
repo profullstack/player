@@ -62,11 +62,13 @@ So hls.js runs wherever Media Source exists (Chrome, Firefox, Edge, Android, des
 
 - **VOD** — scrub with buffered range, ±10s, speed, resume, chapters, `?t=` timestamps, quality.
 - **Live** — none of those, because each is a lie about a stream with no end: nothing to scrub towards, no position worth remembering, no speed but 1. A LIVE badge instead. HLS flips into this from the playlist, after the bar has already been drawn.
-- **Audio** — a compact bar in normal flow: no stage, no fullscreen, no picture-in-picture. Still a full transport. Inferred from an `.mp3`-shaped URL or from an `<audio>` element passed as `media`; pass `audio: true` when the host knows better — a radio station is an `.m3u8` with no picture in it, and would otherwise get a black stage and a LIVE badge.
+- **Audio** — a compact bar in normal flow: no stage, no fullscreen, no picture-in-picture. Still a full transport. Inferred from an `.mp3`-shaped URL or from an `<audio>` element passed as `media` (a `<video>` passed as `media` is always a picture); pass `audio: true` when the host knows better — a radio station is an `.m3u8` with no picture in it, and would otherwise get a black stage and a LIVE badge.
 
 ## Everything else it does
 
 - **Keyboard**: space/k, ← →, j/l, ↑ ↓, m, f, p, 0–9, Home/End, `<` `>`.
+- **Auto-hide**: once playback starts, by any route (autoplay, `media.play()` from the host, a tap), the bar hides after 2.8 s without input (6 s on a TV). A pointer move, a tap or a focus change calls it back; paused, it stays.
+- **Fullscreen**: the button, `f`, or a double-click on the picture. Uses `requestFullscreen`, then `webkitRequestFullscreen` (older Safari, iPad), then the video's own `webkitEnterFullscreen` (iPhone, or an iframe without `allowfullscreen`), and says so in a notice when none works. A host button outside the player can call `player.toggleFullscreen()` from its click handler.
 - **Televisions**: Fire TV, Android TV, Tizen, webOS, Roku and the rest are detected from one list, kept identical to the one genrewatch and tipoffwatch already use so a device is a TV in all of them or none. Controls grow, the auto-hide slows, the seek step doubles, and what a D-pad cannot use is dropped.
 - **Reads a TV guide's attributes from an M3U.** `@profullstack/player/m3u` keeps `tvg-id`, `tvg-logo`, `tvg-chno` and catch-up on each entry when the line carries them, and `parseM3uList` / `parseM3uStream` return the `url-tvg` guide URL.
 - **Remembers** volume, mute and speed across sources, and a position per `mediaId` (60 of them, least-recently-touched evicted). Every storage access is guarded — some browsers throw on merely touching `localStorage`.
