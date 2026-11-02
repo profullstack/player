@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { uiProfile } from '../src/core/tv';
 import { createPlayer, type PlayerOptions } from '../src/core/player';
 import { loadPosition, loadPrefs, savePosition, savePrefs } from '../src/core/storage';
 import type { EngineContext, EngineHandle, QualityLevel } from '../src/engines/types';
@@ -314,6 +315,123 @@ describe('createPlayer', () => {
       document.body.append(root);
       createPlayer(root, { src: 'https://example.test/s.m3u8' });
       expect(root.querySelector('.pux-player__notice')?.textContent).toMatch(/cannot play HLS/i);
+    });
+  });
+
+  describe('auto-hiding controls', () => {
+    const hideAfterMs = uiProfile(false).hideAfterMs;
+    const controlsUp = (root: HTMLElement): boolean =>
+      root.classList.contains('pux-player--controls');
+    const startPlaying = (media: HTMLMediaElement): void => {
+      Object.defineProperty(media, 'paused', { value: false, configurable: true });
+      media.dispatchEvent(new Event('play'));
+    };
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('hides the bar after play starts with no pointer ever moving', () => {
+      const { root, media } = mount();
+      expect(controlsUp(root)).toBe(true);
+      startPlaying(media);
+      expect(controlsUp(root)).toBe(true);
+      vi.advanceTimersByTime(hideAfterMs + 10);
+      expect(controlsUp(root)).toBe(false);
+    });
+
+    it('keeps the bar while paused, however long it sits', () => {
+      const { root, media } = mount();
+      startPlaying(media);
+      media.pause();
+      vi.advanceTimersByTime(hideAfterMs * 5);
+      expect(controlsUp(root)).toBe(true);
+    });
+
+    it('does not let focus left on a bar button pin the bar while playing', () => {
+      const { root, media } = mount();
+      startPlaying(media);
+      control(root, 'play')?.focus();
+      vi.advanceTimersByTime(hideAfterMs + 10);
+      expect(controlsUp(root)).toBe(false);
+    });
+
+    it('calls the bar back on a tap and hides it again', () => {
+      const { root, media } = mount();
+      startPlaying(media);
+      vi.advanceTimersByTime(hideAfterMs + 10);
+      root.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      expect(controlsUp(root)).toBe(true);
+      vi.advanceTimersByTime(hideAfterMs + 10);
+      expect(controlsUp(root)).toBe(false);
+    });
+  });
+
+  describe('fullscreen', () => {
+    const overlayOf = (root: HTMLElement): HTMLElement =>
+      root.querySelector<HTMLElement>('.pux-player__overlay') as HTMLElement;
+
+    afterEach(() => {
+      Reflect.deleteProperty(document, 'fullscreenEnabled');
+    });
+
+    it('goes full screen on a double-click on the picture', () => {
+      const { root } = mount();
+      const request = vi.fn().mockResolvedValue(undefined);
+      root.requestFullscreen = request;
+      overlayOf(root).dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    it('goes full screen on the f key', () => {
+      const { root } = mount();
+      const request = vi.fn().mockResolvedValue(undefined);
+      root.requestFullscreen = request;
+      press(root, 'f');
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    it('falls back to the prefixed API older Safari speaks', () => {
+      const { root } = mount();
+      const request = vi.fn();
+      Object.defineProperty(root, 'requestFullscreen', { value: undefined, configurable: true });
+      Object.defineProperty(root, 'webkitRequestFullscreen', {
+        value: request,
+        configurable: true,
+      });
+      control(root, 'fullscreen')?.click();
+      expect(request).toHaveBeenCalledTimes(1);
+    });
+
+    it("uses the video's own fullscreen when the page may not have one", () => {
+      const { root, media } = mount();
+      Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true });
+      const request = vi.fn().mockResolvedValue(undefined);
+      root.requestFullscreen = request;
+      const native = vi.fn();
+      Object.defineProperty(media, 'webkitEnterFullscreen', { value: native, configurable: true });
+      control(root, 'fullscreen')?.click();
+      expect(request).not.toHaveBeenCalled();
+      expect(native).toHaveBeenCalledTimes(1);
+    });
+
+    it('says so rather than failing silently when there is no way in', async () => {
+      const { root } = mount();
+      Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true });
+      control(root, 'fullscreen')?.click();
+      await Promise.resolve();
+      const notice = root.querySelector<HTMLElement>('.pux-player__notice');
+      expect(notice?.hidden).toBe(false);
+      expect(notice?.textContent).toMatch(/full screen is not available/i);
+    });
+
+    it('keeps the fullscreen button for a <video> handed over with an audio-looking URL', () => {
+      const video = document.createElement('video');
+      const { root } = mount({ media: video, src: 'https://example.test/a.mp3' });
+      expect(control(root, 'fullscreen')?.hidden).toBe(false);
     });
   });
 
